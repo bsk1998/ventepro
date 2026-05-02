@@ -1,0 +1,149 @@
+// fix-icon.js — Crée un favicon.ico 256x256 valide pour electron-builder
+// Lance avec : node fix-icon.js
+// Doit être placé dans le dossier racine du projet (ventepro/)
+
+const fs = require('fs');
+const path = require('path');
+
+// ── Créer une image BMP 256x256 en mémoire ─────────────────────
+function createBMP256(color1, color2) {
+  const size = 256;
+  const rowSize = size * 3; // 3 bytes par pixel (BGR)
+  const padding = (4 - (rowSize % 4)) % 4;
+  const stride = rowSize + padding;
+  const pixelDataSize = stride * size;
+  const fileSize = 54 + pixelDataSize;
+
+  const buf = Buffer.alloc(fileSize, 0);
+
+  // BMP Header
+  buf.write('BM', 0);
+  buf.writeUInt32LE(fileSize, 2);
+  buf.writeUInt32LE(54, 10); // pixel data offset
+
+  // DIB Header (BITMAPINFOHEADER)
+  buf.writeUInt32LE(40, 14);   // header size
+  buf.writeInt32LE(size, 18);  // width
+  buf.writeInt32LE(-size, 22); // height négatif = top-down
+  buf.writeUInt16LE(1, 26);    // color planes
+  buf.writeUInt16LE(24, 28);   // bits per pixel
+  buf.writeUInt32LE(0, 30);    // compression (none)
+  buf.writeUInt32LE(pixelDataSize, 34);
+  buf.writeInt32LE(2835, 38);  // X pixels per meter
+  buf.writeInt32LE(2835, 42);  // Y pixels per meter
+
+  // Pixels — dégradé VenteX AI (bleu cyan #00D4FF vers bleu #0085FF)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const offset = 54 + y * stride + x * 3;
+
+      // Fond dégradé
+      const t = x / size;
+      const r = Math.round(0   * (1-t) + 0   * t);
+      const g = Math.round(212 * (1-t) + 133 * t);
+      const b = Math.round(255 * (1-t) + 255 * t);
+
+      // Cercle centré (forme arrondie)
+      const cx = x - 128, cy = y - 128;
+      const radius = 110;
+      const inCircle = (cx*cx + cy*cy) <= radius*radius;
+
+      if (inCircle) {
+        buf[offset]   = b; // B
+        buf[offset+1] = g; // G
+        buf[offset+2] = r; // R
+      } else {
+        buf[offset]   = 255; // blanc transparent
+        buf[offset+1] = 255;
+        buf[offset+2] = 255;
+      }
+    }
+  }
+  return buf;
+}
+
+// ── Format ICO ────────────────────────────────────────────────
+function createICO(bmpData, size) {
+  // ICO avec image PNG encodée (plus simple et mieux supporté)
+  // On utilise une approche BMP directe dans ICO
+
+  const iconDir = Buffer.alloc(6);
+  iconDir.writeUInt16LE(0, 0);  // reserved
+  iconDir.writeUInt16LE(1, 2);  // type = ICO
+  iconDir.writeUInt16LE(1, 4);  // 1 image
+
+  // Pour ICO avec BMP, on encode l'image en format ICONDIRENTRY + BITMAPINFOHEADER + pixels
+  const imgW = size;
+  const imgH = size;
+  const bpp = 32;
+  const stride = imgW * 4;
+  const pixelSize = stride * imgH;
+  const maskSize = Math.ceil(imgW / 8) * imgH;
+  const bmpSize = 40 + pixelSize + maskSize;
+
+  const entry = Buffer.alloc(16);
+  entry.writeUInt8(imgW >= 256 ? 0 : imgW, 0);
+  entry.writeUInt8(imgH >= 256 ? 0 : imgH, 1);
+  entry.writeUInt8(0, 2);   // color count
+  entry.writeUInt8(0, 3);   // reserved
+  entry.writeUInt16LE(1, 4); // planes
+  entry.writeUInt16LE(bpp, 6); // bit count
+  entry.writeUInt32LE(bmpSize, 8); // size of image data
+  entry.writeUInt32LE(6 + 16, 12); // offset from start
+
+  // BITMAPINFOHEADER pour ICO (40 bytes)
+  const bmpHeader = Buffer.alloc(40);
+  bmpHeader.writeUInt32LE(40, 0);
+  bmpHeader.writeInt32LE(imgW, 4);
+  bmpHeader.writeInt32LE(imgH * 2, 8); // height * 2 pour ICO
+  bmpHeader.writeUInt16LE(1, 12);
+  bmpHeader.writeUInt16LE(bpp, 14);
+  bmpHeader.writeUInt32LE(0, 16);
+  bmpHeader.writeUInt32LE(pixelSize, 20);
+
+  // Pixels BGRA (bottom-up pour ICO)
+  const pixels = Buffer.alloc(pixelSize);
+  for (let y = 0; y < imgH; y++) {
+    for (let x = 0; x < imgW; x++) {
+      const row = imgH - 1 - y; // bottom-up
+      const offset = (row * imgW + x) * 4;
+
+      const cx = x - imgW/2;
+      const cy = y - imgH/2;
+      const r  = imgW * 0.43;
+      const inCircle = (cx*cx + cy*cy) <= r*r;
+
+      const t = x / imgW;
+      const rr = 0;
+      const gg = Math.round(212 * (1-t) + 133 * t);
+      const bb = Math.round(255 * (1-t) + 255 * t);
+      const aa = inCircle ? 255 : 0;
+
+      pixels[offset]   = bb;
+      pixels[offset+1] = gg;
+      pixels[offset+2] = rr;
+      pixels[offset+3] = aa;
+    }
+  }
+
+  // Mask (AND mask — tous à 0 = opaque)
+  const mask = Buffer.alloc(maskSize, 0);
+
+  return Buffer.concat([iconDir, entry, bmpHeader, pixels, mask]);
+}
+
+// ── Générer et sauvegarder ────────────────────────────────────
+try {
+  const ico = createICO(null, 256);
+  const outPath = path.join(__dirname, 'public', 'favicon.ico');
+  fs.writeFileSync(outPath, ico);
+
+  const stats = fs.statSync(outPath);
+  console.log('✅ favicon.ico créé avec succès !');
+  console.log('   Taille :', stats.size, 'bytes');
+  console.log('   Chemin :', outPath);
+  console.log('');
+  console.log('👉 Maintenant lance : npm run dist');
+} catch (err) {
+  console.error('❌ Erreur :', err.message);
+}
