@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../ThemeContext';
-import { db, fmt, today } from '../db';
+import { db, fmt, today, nowISO } from '../db';
+import CameraAI from '../components/CameraAI';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
+// ─── Design tokens ────────────────────────────────────────────────────────
 const D = {
   bg:'linear-gradient(135deg,#EEF2FF 0%,#F0F9FF 50%,#F0FDF4 100%)',
   white:'rgba(255,255,255,0.88)', border:'rgba(255,255,255,0.95)',
@@ -22,7 +23,7 @@ const D = {
 const CATS = ['Lubrifiants','Filtres','Électrique','Liquides','Distribution','Freinage','Carrosserie','Pneumatiques','Alimentaire','Vêtements','Électronique','Plomberie','Outillage','Divers'];
 const UNITS = ['pce','L','kg','m','boîte','carton','sachet','rouleau','paire'];
 
-// ─── Composants utilitaires ───────────────────────────────────────────────────
+// ─── Composants utilitaires ─────────────────────────────────────────────────
 const G = ({ children, style, ac }) => (
   <div style={{ background:D.white, backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)',
     border:`1.5px solid ${ac?ac+'40':D.border}`, borderRadius:D.R,
@@ -76,7 +77,7 @@ const StatCard = ({ icon, label, value, color, sub }) => (
   </div>
 );
 
-// ─── Aperçu étiquette ─────────────────────────────────────────────────────────
+// ─── Aperçu étiquette ────────────────────────────────────────────────────────
 function LabelPreview({ product, copies, onPrint }) {
   return (
     <div style={{ background:D.indigoLt, border:`1.5px solid ${D.indigoBd}`, borderRadius:D.R, padding:14 }}>
@@ -115,7 +116,7 @@ function LabelPreview({ product, copies, onPrint }) {
   );
 }
 
-// ─── Modal Produit ────────────────────────────────────────────────────────────
+// ─── Modal Produit ───────────────────────────────────────────────────────
 const EMPTY = {
   name:'', ref:'', category:'', barcode:'', barcodes:[],
   buyPrice:'', sellPrice:'', sellPriceGros:'', sellPriceSemiGros:'',
@@ -123,8 +124,8 @@ const EMPTY = {
   description:'', supplier:'',
 };
 
-function ProductModal({ product, onClose, onSave, suppliers }) {
-  const [form, setForm] = useState(product ? {...product, barcodes:product.barcodes||[]} : EMPTY);
+function ProductModal({ product, onClose, onSave, suppliers, initialData }) {
+  const [form, setForm] = useState(product ? {...product, barcodes:product.barcodes||[]} : initialData || EMPTY);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('general');
   const [labelCopies, setLabelCopies] = useState(1);
@@ -150,6 +151,7 @@ function ProductModal({ product, onClose, onSave, suppliers }) {
 
   async function save() {
     if(!form.name.trim()) return alert('Nom requis');
+    if(!form.sellPrice) return alert('Prix de vente requis');
     setSaving(true);
     const payload = {
       name:form.name, ref:form.ref, category:form.category,
@@ -161,9 +163,9 @@ function ProductModal({ product, onClose, onSave, suppliers }) {
       stock:Number(form.stock)||0, minStock:Number(form.minStock)||5,
       unit:form.unit||'pce', expiry:form.expiry||null,
       favorite:!!form.favorite, description:form.description||'',
-      supplier:form.supplier||'', updatedAt:new Date().toISOString(),
+      supplier:form.supplier||'', updatedAt:nowISO(),
     };
-    if(isNew) { payload.createdAt=new Date().toISOString(); await db.products.add(payload); }
+    if(isNew) { payload.createdAt=nowISO(); await db.products.add(payload); }
     else await db.products.update(product.id, payload);
     onSave(); setSaving(false);
   }
@@ -269,7 +271,7 @@ function ProductModal({ product, onClose, onSave, suppliers }) {
                 </div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
                   <div>
-                    <Inp label="Prix détail (DA)" value={form.sellPrice} onChange={e=>set('sellPrice',e.target.value)}
+                    <Inp label="Prix détail (DA) *" value={form.sellPrice} onChange={e=>set('sellPrice',e.target.value)}
                       type="number" placeholder="0" color={D.blue}/>
                     {margin!==0&&<div style={{ fontSize:11, color:margin>0?D.green:D.red, fontWeight:700, marginTop:4 }}>
                       Marge: {margin>0?'+':''}{margin}%
@@ -394,9 +396,9 @@ function ProductModal({ product, onClose, onSave, suppliers }) {
   );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // PAGE PRODUITS PRINCIPALE
-// ═════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -407,10 +409,12 @@ export default function Products() {
   const [modal,    setModal]    = useState(null); // null | 'new' | product obj
   const [confirm,  setConfirm]  = useState(null);
   const [view,     setView]     = useState('liste'); // liste | inventaire
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraInitData, setCameraInitData] = useState(null);
 
   // Filtres avancés
-  const [advStock, setAdvStock] = useState('');    // ex: "<5"
-  const [advPrice, setAdvPrice] = useState('');    // ex: ">500"
+  const [advStock, setAdvStock] = useState('');
+  const [advPrice, setAdvPrice] = useState('');
   const [showAdv,  setShowAdv]  = useState(false);
 
   useEffect(() => { load(); }, []);
@@ -526,7 +530,7 @@ export default function Products() {
         <div style={{ display:'flex', gap:10, marginBottom:8 }}>
           <StatCard icon="💰" label="Valeur stock (achat)"   value={fmt(inventory.valAchat)}  color={D.blue}   sub={`${products.length} produits · ${inventory.totalQty} unités`}/>
           <StatCard icon="🏷️" label="Valeur stock (vente)"   value={fmt(inventory.valVente)}  color={D.green}  sub={`Potentiel de vente total`}/>
-          <StatCard icon="📈" label="Marge potentielle"       value={fmt(inventory.marge)}     color={D.violet} sub={inventory.valAchat>0?`${Math.round(inventory.marge/inventory.valAchat*100)}% de marge`:'—'}/>
+          <StatCard icon="📈" label="Marge potentielle"       value={fmt(inventory.marge)}     color={D.violet} sub={inventory.valAchat>0?`${Math.round(inventory.marge/inventory.valAchat*100)}%`:'-'}/>
           <StatCard icon="⚠️" label="Alertes stock"           value={inventory.ruptures+inventory.bas} color={D.amber} sub={`${inventory.ruptures} ruptures · ${inventory.bas} bas`}/>
           {inventory.expires>0&&<StatCard icon="🗓️" label="Périmés" value={inventory.expires} color={D.red} sub="À retirer"/>}
         </div>
@@ -562,6 +566,17 @@ export default function Products() {
           }}>🔧 Filtres avancés {showAdv?'▲':'▼'}</button>
 
           <div style={{ marginLeft:'auto', display:'flex', gap:6 }}>
+            {/* Bouton CameraAI */}
+            <button onClick={() => setShowCamera(true)} style={{
+              background: `linear-gradient(135deg, ${D.violet}, ${D.pink})`,
+              border: 'none', borderRadius: D.Rs, padding: '8px 18px',
+              color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer',
+              boxShadow: `0 4px 12px ${D.violet}40`,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              📸 Scanner Produit
+            </button>
+
             <button onClick={()=>setModal('new')} style={{
               background:`linear-gradient(135deg,${D.blue},${D.indigo})`,
               border:'none', borderRadius:D.Rs, padding:'8px 18px',
@@ -762,6 +777,7 @@ export default function Products() {
           onClose={()=>setModal(null)}
           onSave={()=>{load();setModal(null);}}
           suppliers={[]}
+          initialData={cameraInitData}
         />
       )}
 
@@ -774,10 +790,28 @@ export default function Products() {
             <div style={{ color:D.sub, fontSize:13, marginBottom:20 }}>Cette action est irréversible.</div>
             <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
               <button onClick={()=>setConfirm(null)} style={{ background:'#F1F5F9',border:'none',borderRadius:D.Rs,padding:'10px 20px',cursor:'pointer',fontSize:13,color:D.sub,fontWeight:600 }}>Annuler</button>
-              <button onClick={()=>del(confirm)} style={{ background:`linear-gradient(135deg,${D.red},#DC2626)`,border:'none',borderRadius:D.Rs,padding:'10px 20px',color:'#fff',fontWeight:800,cursor:'pointer',fontSize:13,boxShadow:`0 4px 12px ${D.red}40` }}>Supprimer</button>
+              <button onClick={()=>del(confirm)} style={{ background:`linear-gradient(135deg,${D.red},#DC2626)`,border:'none',borderRadius:D.Rs,padding:'10px 20px',color:'#fff',fontWeight:800,cursor:'pointer',fontSize:13 }}>Supprimer</button>
             </div>
           </G>
         </div>
+      )}
+
+      {/* ══ CAMERA IA ══ */}
+      {showCamera && (
+        <CameraAI
+          onClose={() => {setShowCamera(false); setCameraInitData(null);}}
+          onProductFound={(prod) => {
+            setCameraInitData(prod);
+            setModal('new');
+            setShowCamera(false);
+          }}
+          onProductsImported={(count) => {
+            alert(`✅ ${count} produit(s) importé(s) avec succès !`);
+            load();
+            setShowCamera(false);
+          }}
+          existingProducts={products}
+        />
       )}
     </div>
   );

@@ -1,109 +1,191 @@
 import { useTheme } from '../ThemeContext';
 import { useState, useRef, useEffect } from 'react';
-
-import { db, fmt } from '../db';
+import { db, fmt, nowISO } from '../db';
 
 const AGENTS_ADMIN = [
   {
     id:'stock', icon:'📦', name:'Agent Stock', color:'#FFC04D',
-    desc:'Historique complet · Mouvements · Analyses',
-    prompt:`Tu es un expert en gestion de stock avec accès COMPLET à toutes les données.
-Tu peux répondre à des questions comme:
-- Quand tel produit a été vendu et à qui
-- Quand il a été acheté et à quel prix
-- Combien de fois il a été vendu ce mois/cette année
-- Quels produits se vendent le mieux/moins bien
-- Prévisions de réapprovisionnement
-- Historique complet des mouvements de stock
-Sois précis, utilise les vraies données, donne des conseils proactifs.`,
-    suggestions:['Quand ai-je vendu de l\'huile moteur ?','Produit le plus vendu ?','Que commander cette semaine ?','Analyse mon stock complet']
+    desc:'Gestion complète · Alertes · Analyses',
+    prompt:`Tu es un EXPERT EN GESTION DE STOCK avec ACCÈS TOTAL à la base de données.
+
+COMPÉTENCES PRINCIPALES:
+- Identifier les produits en rupture et stock critique
+- Recommander les quantités à commander
+- Analyser les mouvements de stock
+- Calculer le coût du stock immobilisé
+- Identifier les produits lents à vendre
+- Suggestions d'optimisation du réapprovisionnement
+
+DONNÉES DISPONIBLES: historique complet des ventes, stocks actuels, prix d'achat.
+
+RÈGLES: Sois précis, donne des chiffres exacts, propose des actions concrètes.`,
+    suggestions:['Quels produits réapprovisionner ?','Stock critique ?','Coût stock total ?','Produits les plus lents ?']
   },
   {
     id:'sales', icon:'🧾', name:'Agent Ventes', color:'#00E5A0',
-    desc:'Analyse · Tendances · Performance',
-    prompt:`Tu es un analyste commercial expert avec accès à TOUTES les ventes.
-Tu peux répondre:
-- Chiffre d'affaires par jour/semaine/mois/année
-- Ventes par client, par produit, par vendeur
-- Heures de pointe, jours les plus actifs
-- Comparaisons de périodes
-- Prévisions et tendances
-- Clients qui n'ont pas acheté depuis longtemps
-Analyse en profondeur et donne des conseils stratégiques.`,
-    suggestions:['CA de cette semaine ?','Meilleur client ce mois ?','Comparer avec le mois dernier','Heures de pointe ?']
+    desc:'CA · Tendances · Conseils commerciaux',
+    prompt:`Tu es un EXPERT COMMERCIAL avec ACCÈS à TOUS les chiffres de vente.
+
+COMPÉTENCES:
+- Calculer le chiffre d'affaires par période
+- Identifier les clients VIP et les pertes
+- Analyser les tendances de vente
+- Conseiller sur l'augmentation du CA
+- Identifier les heures/jours de pointe
+- Recommander les meilleurs produits à promouvoir
+
+TÂCHES PRATIQUES:
+- Générer un rapport de vente rapide
+- Identifier les clients à relancer
+- Suggestions pour augmenter les ventes
+- Analyse comparative de périodes
+
+RÈGLES: Sois commercial, donne des conseils actionnables.`,
+    suggestions:['CA de cette semaine ?','Meilleur client ?','Produits vedettes ?','Heures de pointe ?']
   },
   {
     id:'clients', icon:'👥', name:'Agent Clients', color:'#4D9FFF',
-    desc:'Crédits · Fidélité · Recouvrement',
-    prompt:`Tu es un expert relation client avec accès à TOUS les dossiers clients.
-Tu peux:
-- Identifier les clients avec impayés et les montants exacts
-- Voir l'historique complet d'un client
-- Suggérer qui relancer et comment
-- Analyser la fidélité des clients
-- Identifier les meilleurs clients
-- Alerter sur les risques de créances douteuses
-Sois proactif et donne des recommandations concrètes.`,
-    suggestions:['Qui me doit de l\'argent ?','Historique de Rachid ?','Clients à relancer ?','Meilleurs clients fidèles ?']
+    desc:'Crédits · Recouvrement · Fidélité',
+    prompt:`Tu es un GESTIONNAIRE CLIENTS EXPERT pour le recouvrement et la fidélité.
+
+COMPÉTENCES:
+- Identifier tous les clients avec crédits non payés
+- Montants exacts de chaque créance
+- Historique d'achat complet par client
+- Segmenter les clients (VIP, réguliers, occasionnels)
+- Conseiller sur le recouvrement
+- Calculer la valeur à vie de chaque client
+
+TÂCHES SPÉCIFIQUES:
+- Lister les débiteurs avec montants
+- Proposer un plan de relance
+- Identifier les meilleurs clients fidèles
+- Évaluer le risque de créance douteuse
+- Calculer les relances nécessaires
+
+RÈGLES: Sois proactif, donne des nombres concrets, des plans d'action.`,
+    suggestions:['Qui doit le plus ?','Plan de recouvrement ?','Clients fidèles ?','Risque créances ?']
   },
   {
     id:'finance', icon:'💰', name:'Agent Finance', color:'#C084FC',
-    desc:'Trésorerie · Marges · Zakat · Bilan',
-    prompt:`Tu es un comptable et conseiller financier expert.
-Tu analyses:
-- Trésorerie en temps réel
-- Marges par produit et par catégorie
+    desc:'Trésorerie · Marges · Zakat · Bilans',
+    prompt:`Tu es un EXPERT COMPTABLE & FINANCIER avec ACCÈS COMPLET aux données économiques.
+
+COMPÉTENCES PRINCIPALES:
+- Calcul trésorerie en temps réel
+- Analyse des marges par produit/catégorie
 - Rentabilité globale et par période
-- Calcul précis de la Zakat
-- Dépenses vs recettes
-- Conseils pour optimiser les profits
-Donne des analyses financières professionnelles et des conseils pratiques.`,
-    suggestions:['Bilan du mois ?','Ma marge nette ?','Calculer la zakat ?','Où je perds de l\'argent ?']
+- CALCUL ZAKAT ISLAMIQUE (2.5% des actifs)
+- Bilans détaillés
+- Ratios de rentabilité
+- Conseils d'optimisation fiscale & financière
+
+TÂCHES SPÉCIFIQUES:
+✓ Créer des FACTURES d'achat/vente
+✓ Calculer la ZAKAT du commerce (avec détails)
+✓ Générer des BILANS mensuels/annuels
+✓ Analyser la rentabilité par catégorie
+✓ Créer des RAPPORTS FINANCIERS
+✓ Identifier les points de dépenses
+✓ Recommander des optimisations
+
+FORMAT ZAKAT: Montant net de marchandises + créances - dettes = base zakat.
+
+RÈGLES: Sois rigoureux, transparent, donne des fichiers exploitables.`,
+    suggestions:['Bilan du mois ?','Calculer zakat ?','Marges par catégorie ?','Créer facture ?']
   },
   {
     id:'hr', icon:'👨‍💼', name:'Agent RH', color:'#8B5CF6',
-    desc:'Employés · Performance · Salaires',
-    prompt:`Tu es un DRH expert avec accès aux données RH complètes.
-Tu analyses:
-- Performance de chaque vendeur (CA généré, nombre de ventes)
-- Comparaison entre employés
-- Charges salariales vs CA généré
-- Suggestions pour motiver l'équipe
-- Alertes sur les performances faibles
-Donne des analyses RH objectives et des recommandations.`,
-    suggestions:['Meilleur vendeur ?','Performance de l\'équipe ?','Ratio salaires/CA ?','Qui vend le plus ?']
+    desc:'Vendeurs · Performance · Masse salariale',
+    prompt:`Tu es un RESPONSABLE RH EXPERT avec données complètes sur performance.
+
+COMPÉTENCES:
+- Classement vendeurs par CA généré
+- Nombre et valeur des ventes par vendeur
+- Analyse ROI salaire vs CA généré
+- Ratio productivité vendeur
+- Performance quotidienne/hebdomadaire
+- Recommandations de motivation/sanction
+- Calcul commissions basées sur performances
+
+TÂCHES:
+- Classement vendeurs (CA généré, nombre ventes)
+- Analyse individuelle + comparative
+- Identifier les stars et underperformers
+- Proposer des commissions basées sur performance
+- Genérer rapports de performance
+- Recommander bonifications/améliorations
+
+RÈGLES: Sois objectif, base-toi sur les chiffres réels, sois constructif.`,
+    suggestions:['Meilleur vendeur ?','Performance équipe ?','Ratio CA/Salaire ?','Commissions ?']
   },
   {
     id:'assistant', icon:'🤖', name:'Assistant Général', color:'#00D4FF',
-    desc:'Aide · Conseils · Questions générales',
-    prompt:`Tu es l'assistant général de VenteX AI, un logiciel de gestion commerciale.
-Tu aides avec:
-- Toute question sur le logiciel
-- Conseils de gestion commerciale
-- Stratégies pour améliorer les ventes
+    desc:'Aide globale · Conseils · Questions',
+    prompt:`Tu es l'ASSISTANT GÉNÉRAL expert en gestion commerciale pour VenteX AI.
+
+DOMAINES D'EXPERTISE:
+- Conseils stratégiques généraux
+- Utilisation du logiciel VenteX AI
+- Bonnes pratiques commerciales
 - Gestion quotidienne du magasin
+- Questions sur les fonctionnalités
+- Optimisation globale du business
 - Réponses aux questions générales
-Sois utile, pratique et adapté au contexte algérien.`,
-    suggestions:['Comment améliorer mes ventes ?','Conseils pour ce mois ?','Comment utiliser le logiciel ?','Résumé de la journée ?']
+
+TÂCHES:
+- Expliquer les fonctionnalités du logiciel
+- Donner des conseils de gestion
+- Répondre aux questions métier
+- Proposer des améliorations
+- Fournir du soutien général
+
+ADAPTATION: Adapte tes réponses au contexte algérien, au secteur d'activité.`,
+    suggestions:['Comment vendre plus ?','Utiliser le logiciel ?','Conseils stratégiques ?','Résumé de la journée ?']
   },
 ];
 
 const AGENTS_EMPLOYEE = [
   {
     id:'stock', icon:'📦', name:'Agent Stock', color:'#FFC04D',
-    desc:'Vérifier le stock disponible',
-    prompt:`Tu es un assistant stock pour employé. Tu peux donner:
-- Le stock actuel des produits
-- Les produits en rupture
-- Les prix de vente
-Pas d'accès aux prix d'achat ni aux données financières.`,
-    suggestions:['Stock disponible ?','Produits en rupture ?','Prix de ce produit ?']
+    desc:'Consulter le stock en temps réel',
+    prompt:`Tu es un assistant stock pour les employés.
+
+ACCÈS LIMITÉ:
+✓ Stock actuel de tous les produits
+✓ Prix de vente uniquement
+✓ Disponibilité produits
+
+ACCÈS REFUSÉ:
+✗ Prix d'achat
+✗ Coûts
+✗ Données financières
+
+TÂCHES:
+- Vérifier disponibilité produit
+- Consulter prix de vente
+- Alertes stock bas
+- Informer sur remplaçants possibles`,
+    suggestions:['Stock de ce produit ?','Produits en rupture ?','Prix de vente ?']
   },
   {
     id:'assistant', icon:'🤖', name:'Assistant', color:'#00D4FF',
-    desc:'Aide générale pour les employés',
-    prompt:`Tu es un assistant pour employé de magasin. Tu aides avec les tâches quotidiennes de vente. Tu n'as PAS accès aux données financières, salaires, ou informations confidentielles.`,
-    suggestions:['Comment faire une vente ?','Comment ajouter un client ?','Aide rapide ?']
+    desc:'Aide et conseils pour la journée',
+    prompt:`Tu es un assistant pour employés/vendeurs.
+
+ACCÈS:
+✓ Aide sur les ventes
+✓ Conseils pratiques
+✓ Questions sur le travail
+✓ Assistance générale
+
+ACCÈS REFUSÉ:
+✗ Données confidentielles
+✗ Informations financières
+✗ Données RH
+
+Sois encourageant, pratique et utile.`,
+    suggestions:['Comment faire vente ?','Questions rapides ?','Aide ?']
   },
 ];
 
@@ -113,7 +195,7 @@ async function getAllData() {
     db.clients.toArray(),
     db.suppliers.toArray(),
     db.employees.toArray(),
-    db.sales.orderBy('createdAt').reverse().limit(200).toArray(),
+    db.sales.orderBy('createdAt').reverse().limit(300).toArray(),
     db.saleItems.toArray(),
     db.payments.toArray(),
     db.expenses.toArray(),
@@ -147,30 +229,35 @@ function localFallback(agentId, question, data) {
   if (agentId === 'stock') {
     const ruptures = products.filter(p=>p.stock===0);
     const bas = products.filter(p=>p.stock>0&&p.stock<=p.minStock);
-    const topVendu = [...products].sort((a,b)=>(b.totalVendu||0)-(a.totalVendu||0)).slice(0,3);
-    return `📦 Analyse Stock (mode hors-ligne)\n\n🔴 Ruptures: ${ruptures.map(p=>p.name).join(', ')||'Aucune'}\n🟡 Stock bas: ${bas.map(p=>`${p.name}(${p.stock})`).join(', ')||'Aucun'}\n\n🏆 Top vendus:\n${topVendu.map(p=>`• ${p.name}: ${p.totalVendu||0} unités`).join('\n')}`;
+    const topVendu = [...products].sort((a,b)=>(b.totalVendu||0)-(a.totalVendu||0)).slice(0,5);
+    return `📦 RAPPORT STOCK\n\n🔴 RUPTURES (${ruptures.length}): ${ruptures.map(p=>p.name).join(', ')||'Aucune'}\n🟡 STOCK BAS (${bas.length}): ${bas.map(p=>`${p.name}(${p.stock})`).join(', ')||'Aucun'}\n\n🏆 Top 5 plus vendus:\n${topVendu.map((p,i)=>`${i+1}. ${p.name}: ${p.totalVendu} unités`).join('\n')}`;
   }
   if (agentId === 'sales') {
     const ca = sales.reduce((s,v)=>s+Number(v.total||0),0);
     const today = new Date().toISOString().slice(0,10);
     const caToday = sales.filter(s=>s.createdAt?.startsWith(today)).reduce((s,v)=>s+Number(v.total||0),0);
-    return `📊 Analyse Ventes\n\nCA total: ${fmt(ca)}\nCA aujourd'hui: ${fmt(caToday)}\nNombre ventes: ${sales.length}\nDont crédit: ${sales.filter(s=>s.status==='crédit').length}`;
+    const credits = sales.filter(s=>s.status==='crédit').reduce((s,v)=>s+Math.max(0,Number(v.total||0)-Number(v.paid||0)),0);
+    return `🧾 RAPPORT VENTES\n\n💰 CA total: ${fmt(ca)}\n📅 CA aujourd'hui: ${fmt(caToday)}\n📊 Ventes: ${sales.length}\n📝 Crédits: ${fmt(credits)}`;
   }
   if (agentId === 'clients') {
     const debiteurs = clients.filter(c=>(c.totalAchete-c.totalPaye)>0).sort((a,b)=>(b.totalAchete-b.totalPaye)-(a.totalAchete-a.totalPaye));
-    return `👥 Analyse Clients\n\nTotal clients: ${clients.length}\nAvec crédit: ${debiteurs.length}\n\nTop débiteurs:\n${debiteurs.slice(0,5).map(c=>`• ${c.name}: ${fmt(c.totalAchete-c.totalPaye)}`).join('\n')||'Aucun impayé ✅'}`;
+    const totalCredit = debiteurs.reduce((s,c)=>s+(c.totalAchete-c.totalPaye),0);
+    return `👥 RAPPORT CLIENTS\n\nTotal: ${clients.length} | Débiteurs: ${debiteurs.length}\nCredit total: ${fmt(totalCredit)}\n\nTop 5 débiteurs:\n${debiteurs.slice(0,5).map(c=>`• ${c.name}: ${fmt(c.totalAchete-c.totalPaye)} DA`).join('\n')}`;
   }
   if (agentId === 'finance') {
     const ca = sales.reduce((s,v)=>s+Number(v.total||0),0);
+    const achat = products.reduce((s,p)=>s+(p.stock||0)*(p.buyPrice||0),0);
     const dep = expenses.reduce((s,e)=>s+Number(e.amount||0),0);
-    return `💰 Bilan Financier\n\nCA total: ${fmt(ca)}\nDépenses: ${fmt(dep)}\nBénéfice: ${fmt(ca-dep)}\nZakat (2.5%/an): ${fmt((ca-dep)*0.025)}`;
+    const benefice = ca - dep;
+    const zakat = benefice * 0.025;
+    return `💰 BILAN FINANCIER\n\n📊 Chiffre d'affaires: ${fmt(ca)}\n📦 Stock immobilisé: ${fmt(achat)}\n💸 Dépenses: ${fmt(dep)}\n📈 Bénéfice brut: ${fmt(benefice)}\n🕌 ZAKAT (2.5%): ${fmt(zakat)}`;
   }
   if (agentId === 'hr') {
     const actifs = employees.filter(e=>e.active);
     const masse = actifs.reduce((s,e)=>s+Number(e.salary||0),0);
-    return `👨‍💼 Rapport RH\n\nEmployés actifs: ${actifs.length}\nMasse salariale: ${fmt(masse)}/mois\n${actifs.map(e=>`• ${e.name}(${e.role}): ${fmt(e.salary)}/mois`).join('\n')}`;
+    return `👨‍💼 RAPPORT RH\n\n👥 Employés actifs: ${actifs.length}\n💼 Masse salariale/mois: ${fmt(masse)}\n\n${actifs.map(e=>`• ${e.name} (${e.role}): ${fmt(e.salary)}`).join('\n')}`;
   }
-  return `🤖 Assistant hors-ligne\n\nProduits: ${products.length} | Stock critique: ${products.filter(p=>p.stock<=p.minStock).length}\nClients: ${clients.length} | Ventes: ${sales.length}`;
+  return `🤖 Mode hors-ligne\n\nProduits: ${products.length} | Clients: ${clients.length} | Ventes: ${sales.length}`;
 }
 
 export default function AIAgentPanel({ onClose, userRole='admin' }) {
@@ -190,7 +277,7 @@ export default function AIAgentPanel({ onClose, userRole='admin' }) {
 
   const agentMsgs = msgs[activeAgent.id] || [{
     role:'ai',
-    text:`Bonjour ! Je suis votre **${activeAgent.name}**.\n${activeAgent.desc}.\n\n${userRole==='admin'?'✅ Accès complet aux données activé.':'⚡ Mode employé.'}\n\nComment puis-je vous aider ?`,
+    text:`Bienvenue ! Je suis votre **${activeAgent.name}**.\n\n${activeAgent.desc}.\n\nJe peux vous aider avec des tâches spécifiques et générer des rapports. Comment puis-je vous assister ? 🚀`
   }];
 
   async function send(q) {
@@ -206,31 +293,29 @@ export default function AIAgentPanel({ onClose, userRole='admin' }) {
 
     try {
       const dataCtx = userRole === 'admin'
-        ? `PRODUITS (avec historique ventes): ${JSON.stringify(data.products?.slice(0,30))}
-CLIENTS (avec historique): ${JSON.stringify(data.clients?.slice(0,20))}
-FOURNISSEURS: ${JSON.stringify(data.suppliers)}
-EMPLOYES: ${JSON.stringify(data.employees)}
-VENTES RECENTES (200): ${JSON.stringify(data.sales?.slice(0,50))}
-LIGNES VENTES: ${JSON.stringify(data.saleItems?.slice(0,100))}
-DEPENSES: ${JSON.stringify(data.expenses?.slice(0,30))}
-DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}`
-        : `PRODUITS (stock et prix vente seulement): ${JSON.stringify(data.products?.map(p=>({id:p.id,name:p.name,stock:p.stock,unit:p.unit,sellPrice:p.sellPrice})))}`;
+        ? `PRODUITS (${data.products?.length}): ${JSON.stringify(data.products?.slice(0,20))}
+CLIENTS (${data.clients?.length}): ${JSON.stringify(data.clients?.slice(0,15))}
+VENTES (dernières 50): ${JSON.stringify(data.sales?.slice(0,50))}
+EMPLOYÉS: ${JSON.stringify(data.employees)}
+DÉPENSES: ${JSON.stringify(data.expenses?.slice(0,20))}
+DATE ACTUELLE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}`
+        : `PRODUITS (stock et prix vente): ${JSON.stringify(data.products?.map(p=>({id:p.id,name:p.name,stock:p.stock,unit:p.unit,sellPrice:p.sellPrice})))}`;
 
       const controller = new AbortController();
-      const timeout = setTimeout(()=>controller.abort(), 10000);
+      const timeout = setTimeout(()=>controller.abort(), 15000);
 
       const key = localStorage.getItem('groq_key') || '';
       if (!key) {
-        reply = "⚠️ Clé API Groq manquante. Cliquez sur '🔑 Clé API' pour la configurer.\n\nObtenez-la gratuitement sur console.groq.com";
+        reply = "⚠️ Clé API Groq manquante.\n\nCopyez votre clé gratuite depuis console.groq.com\nCliquez sur la roue d'engrenage pour la configurer.";
         setOffline(true);
       } else {
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method:'POST', signal:controller.signal,
           headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
           body: JSON.stringify({
-            model:'llama-3.3-70b-versatile', max_tokens:1500,
+            model:'llama-3.3-70b-versatile', max_tokens:2000,
             messages:[
-              {role:'system', content:`${activeAgent.prompt}\n\nDONNEES:\n${dataCtx}\n\nRÈGLES: réponds uniquement à ce qui est demandé. Bonjour = réponse courte. Français naturel.`},
+              {role:'system', content:`${activeAgent.prompt}\n\nDONNEES COMPLÈTES:\n${dataCtx}\n\nRÈGLES ABSOLUES:\n1. Réponds UNIQUEMENT à ce qui est demandé\n2. Sois précis avec les chiffres\n3. Utilise le format JSON pour les rapports\n4. Français naturel et professionnel\n5. Propose des actions concrètes`},
               ...newMsgs.filter((_,i)=>i>0).map(m=>({role:m.role==='ai'?'assistant':'user',content:m.text}))
             ]
           })
@@ -245,10 +330,6 @@ DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',mon
       reply = localFallback(activeAgent.id, question, data) + '\n\n_💡 Mode hors-ligne — analyse locale._';
     }
 
-    // Agent Design: apply theme change
-    if (activeAgent.id === 'design' && typeof applyFromAgent === 'function') {
-      applyFromAgent(reply);
-    }
     setMsgs(m=>({...m,[activeAgent.id]:[...newMsgs,{role:'ai',text:reply}]}));
     setLoading(false);
     setTimeout(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),100);
@@ -266,13 +347,10 @@ DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',mon
         <div style={{width:250,background:'#0A0D18',borderRight:'1px solid #1B2135',
           display:'flex',flexDirection:'column',padding:'20px 12px'}}>
           <div style={{padding:'0 8px 20px'}}>
-            <div style={{fontWeight:900,fontSize:16,color:'#00D4FF',letterSpacing:-.5}}>🤖 VenteX IA</div>
+            <div style={{fontWeight:900,fontSize:16,color:'#00D4FF',letterSpacing:-.5}}>🤖 Agents IA</div>
             <div style={{color:offline?'#FFC04D':'#00E5A0',fontSize:11,marginTop:4,display:'flex',alignItems:'center',gap:5}}>
               <div style={{width:6,height:6,borderRadius:'50%',background:offline?'#FFC04D':'#00E5A0'}}/>
-              {offline?'Mode hors-ligne':'Connecté · Données live'}
-            </div>
-            <div style={{color:'#3A4260',fontSize:10,marginTop:4}}>
-              {userRole==='admin'?'👑 Mode Administrateur':'👨‍💼 Mode Employé'}
+              {offline?'Mode hors-ligne':'Connecté'}
             </div>
           </div>
 
@@ -286,8 +364,8 @@ DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',mon
             }}>
               <span style={{fontSize:20}}>{a.icon}</span>
               <div>
-                <div style={{fontSize:12,fontWeight:700,color:activeAgent.id===a.id?a.color:C.text}}>{a.name}</div>
-                <div style={{fontSize:10,color:'#3A4260',marginTop:1,lineHeight:1.3}}>{a.desc}</div>
+                <div style={{fontSize:12,fontWeight:700,color:activeAgent.id===a.id?a.color:'#EDF1FF'}}>{a.name}</div>
+                <div style={{fontSize:10,color:'#3A4260',marginTop:1,lineHeight:1.2}}>{a.desc}</div>
               </div>
             </button>
           ))}
@@ -315,8 +393,8 @@ DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',mon
             {agentMsgs.map((m,i)=>(
               <div key={i} style={{
                 alignSelf:m.role==='user'?'flex-end':'flex-start',
-                background:m.role==='user'?activeAgent.color:(C.chatAiBg||C.card),
-                color:m.role==='user'?'#fff':(C.chatAiText||C.text),
+                background:m.role==='user'?activeAgent.color:(C.chatAiBg||'#1B2135'),
+                color:m.role==='user'?'#fff':(C.chatAiText||'#EDF1FF'),
                 padding:'11px 16px',
                 borderRadius:m.role==='user'?'16px 16px 4px 16px':'16px 16px 16px 4px',
                 maxWidth:'82%',fontSize:13.5,lineHeight:1.7,whiteSpace:'pre-wrap',
@@ -325,7 +403,7 @@ DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',mon
               }}>{m.text.replace(/\*\*(.*?)\*\*/g,'$1')}</div>
             ))}
             {loading&&(
-              <div style={{alignSelf:'flex-start',background:C.chatAiBg||C.card,border:`1px solid ${C.chatBorder||C.border}`,
+              <div style={{alignSelf:'flex-start',background:'#1B2135',border:'1px solid #1B2135',
                 padding:'11px 16px',borderRadius:'16px 16px 16px 4px',
                 display:'flex',gap:6,alignItems:'center'}}>
                 <div style={{width:8,height:8,borderRadius:'50%',background:activeAgent.color,animation:'pulse 1s infinite'}}/>
@@ -367,6 +445,13 @@ DATE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',mon
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </div>
   );
 }

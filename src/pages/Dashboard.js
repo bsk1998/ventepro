@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-// Suppression de l'import useTheme qui causait l'erreur
 import { getDashboardStats, fmt } from '../db';
+import financeAgent from '../components/FinanceAgent';
 
 function Clock() {
   const [time, setTime] = useState(new Date());
@@ -70,6 +70,8 @@ function ModuleTile({ icon, title, shortcut, items, color, bg, onClick, badge })
 
 export default function Dashboard({ onNavigate }) {
   const [stats, setStats] = useState(null);
+  const [report, setReport] = useState(null); //
+  const [reportAlert, setReportAlert] = useState([]); //
 
   useEffect(() => {
     (async () => {
@@ -78,6 +80,17 @@ export default function Dashboard({ onNavigate }) {
         setStats(s);
       } catch (e) { console.error(e); }
     })();
+  }, []);
+
+  // useEffect rapport
+  useEffect(() => {
+    financeAgent.generateMonthlyReport()
+      .then(r => {
+        setReport(r);
+        // Garder uniquement les alertes danger et warning
+        setReportAlert(r.recommendations.filter(rec => rec.type === 'danger' || rec.type === 'warning'));
+      })
+      .catch(() => {});
   }, []);
 
   const MODULES = [
@@ -112,6 +125,18 @@ export default function Dashboard({ onNavigate }) {
         <Clock />
       </div>
 
+      {/* ══ ALERTES IA ══ */}
+      {reportAlert.length > 0 && (
+        <div style={{ padding: '8px 20px', background: '#FEF3C7', borderBottom: '2px solid #FDE68A', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 900, color: '#92400E', flexShrink: 0 }}>🤖 Agent Finance :</span>
+          {reportAlert.slice(0, 2).map((r, i) => (
+            <span key={i} style={{ fontSize: 12, color: '#78350F', background: '#fff', border: '1px solid #FDE68A', borderRadius: 20, padding: '3px 12px' }}>
+              {r.type === 'danger' ? '🔴' : '🟡'} {r.msg}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
         <div style={{ flex:1, padding:'25px', overflowY:'auto' }}>
           <div style={{ fontSize:12, fontWeight:800, color:'#64748B', marginBottom:15, display:'flex', alignItems:'center', gap:10 }}>
@@ -138,15 +163,15 @@ export default function Dashboard({ onNavigate }) {
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             <div style={{ background:'#F0FDF4', padding:'12px', borderRadius:10, border:'1px solid #10B98120' }}>
                 <div style={{ fontSize:10, fontWeight:800, color:'#10B981' }}>CA AUJOURD'HUI</div>
-                <div style={{ fontSize:18, fontWeight:900 }}>0 DA</div>
+                <div style={{ fontSize:18, fontWeight:900 }}>{stats?.todayTotal ? fmt(stats.todayTotal) : '0 DA'}</div>
             </div>
             <div style={{ background:'#EFF6FF', padding:'12px', borderRadius:10, border:'1px solid #3B82F620' }}>
                 <div style={{ fontSize:10, fontWeight:800, color:'#3B82F6' }}>CA DU MOIS</div>
-                <div style={{ fontSize:18, fontWeight:900 }}>1 180 DA</div>
+                <div style={{ fontSize:18, fontWeight:900 }}>{stats?.monthTotal ? fmt(stats.monthTotal) : '1 180 DA'}</div>
             </div>
             <div style={{ background:'#FFFBEB', padding:'12px', borderRadius:10, border:'1px solid #F59E0B20' }}>
                 <div style={{ fontSize:10, fontWeight:800, color:'#F59E0B' }}>CRÉDITS</div>
-                <div style={{ fontSize:18, fontWeight:900 }}>1 130 DA</div>
+                <div style={{ fontSize:18, fontWeight:900 }}>{stats?.monthCredit ? fmt(stats.monthCredit) : '1 130 DA'}</div>
             </div>
           </div>
         </div>
