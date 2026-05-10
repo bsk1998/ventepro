@@ -23,31 +23,24 @@ function Clock({ C }) {
 
 function ModuleTile({ icon, title, shortcut, items, color, onClick, badge, C }) {
   const [hover, setHover] = useState(false);
-  const tileBg   = hover ? color : color + (C.isLight ? '18' : '22');
-  const textColor = hover ? '#fff' : C.text;
-  const subColor  = hover ? 'rgba(255,255,255,.82)' : C.sub;
+  const tileBg    = hover ? color : color + (C.isLight ? '18' : '22');
+  const textColor  = hover ? '#fff' : C.text;
+  const subColor   = hover ? 'rgba(255,255,255,.82)' : C.sub;
   return (
     <div
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        background: tileBg,
-        border: `2px solid ${color}`,
-        borderRadius: 12,
-        padding: '14px 16px',
-        cursor: 'pointer',
-        transition: 'all .18s',
-        position: 'relative',
-        boxShadow: hover ? `0 6px 20px ${color}40` : C.shadowSm,
+        background: tileBg, border: `2px solid ${color}`, borderRadius: 12,
+        padding: '14px 16px', cursor: 'pointer', transition: 'all .18s',
+        position: 'relative', boxShadow: hover ? `0 6px 20px ${color}40` : C.shadowSm,
       }}>
       {badge > 0 && (
-        <div style={{
-          position: 'absolute', top: -8, right: -8,
+        <div style={{ position: 'absolute', top: -8, right: -8,
           background: C.red, color: '#fff', borderRadius: 20,
           fontSize: 10, fontWeight: 900, padding: '3px 8px',
-          border: `2px solid ${C.surface}`,
-        }}>{badge}</div>
+          border: `2px solid ${C.surface}` }}>{badge}</div>
       )}
       <div style={{ display: 'flex', gap: 14 }}>
         <div style={{
@@ -77,15 +70,13 @@ function ModuleTile({ icon, title, shortcut, items, color, onClick, badge, C }) 
 function StatBox({ label, value, color, C }) {
   return (
     <div style={{ background: color + '18', padding: '12px', borderRadius: 10, border: `1px solid ${color}30` }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: .6, marginBottom: 4 }}>
-        {label}
-      </div>
+      <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: .6, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 900, color: C.text, fontFamily: 'monospace' }}>{value}</div>
     </div>
   );
 }
 
-export default function Dashboard({ onNavigate }) {
+export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
   const { theme: C, metier } = useTheme();
   const [stats,       setStats]       = useState(null);
   const [reportAlert, setReportAlert] = useState([]);
@@ -97,17 +88,38 @@ export default function Dashboard({ onNavigate }) {
       .catch(() => {});
   }, []);
 
+  // FIX AUDIT : raccourcis F1-F9 maintenant câblés sur le Dashboard
+  useEffect(() => {
+    const MAP = {
+      F1: 'sales', F2: 'suppliers', F3: 'products', F4: 'clients',
+      F5: 'suppliers', F6: 'treasury', F7: 'reports', F8: 'sales',
+      F9: 'employees',
+    };
+    function handler(e) {
+      if (MAP[e.key]) { e.preventDefault(); onNavigate(MAP[e.key]); }
+      // Ctrl+I → ouvre l'IA depuis le Dashboard
+      if (e.ctrlKey && e.key === 'i') { e.preventDefault(); if (onOpenAI) onOpenAI(); }
+    }
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onNavigate, onOpenAI]);
+
   const MODULES = [
-    { icon: metier.navIcons?.products  || '📦', title: 'Produits',       shortcut: 'F3', color: C.blue,   page: 'products',  badge: stats?.stockAlert || 0, items: ['Produits & Stock', 'Alertes stock', 'Inventaire', 'Catégories'] },
-    { icon: metier.navIcons?.clients   || '👥', title: 'Clients',        shortcut: 'F4', color: C.violet, page: 'clients',   items: ['Fiche client', 'Suivi Clients', 'Versements', 'Crédits'] },
-    { icon: metier.navIcons?.suppliers || '🚚', title: 'Fournisseurs',   shortcut: 'F5', color: C.accent, page: 'suppliers', items: ['Fournisseurs', 'Suivi', 'Versements', 'Créances'] },
-    { icon: metier.navIcons?.sales     || '🧾', title: 'Vente',          shortcut: 'F1', color: C.green,  page: 'sales',     items: ['Vente par client', 'Factures', 'Vente par jour', 'Récap.'] },
-    { icon: '🛒',                               title: 'Achat',          shortcut: 'F2', color: C.amber,  page: 'suppliers', items: ['Achat', 'Mise à jour achat', 'Récap. Achat'] },
-    { icon: metier.navIcons?.treasury  || '💰', title: 'Entrée / Sortie',shortcut: 'F6', color: C.red,    page: 'treasury',  items: ['Dépenses', 'Caisse', 'Bénéfice', 'Zakat'] },
-    { icon: metier.navIcons?.reports   || '📊', title: 'Statistiques',   shortcut: 'F7', color: C.purple, page: 'reports',   items: ['CA par période', 'Top produits', 'Top clients'] },
-    { icon: metier.navIcons?.settings  || '⚙️', title: 'Paramètres',    shortcut: 'F8', color: C.sub,    page: 'settings',  items: ['Infos Société', 'Sauvegarde', 'Imprimante'] },
-    { icon: metier.navIcons?.employees || '👨‍💼',title: 'Employés',       shortcut: 'F9', color: '#EC4899',page: 'employees', items: ['Gestion équipe', 'Performances', 'Salaires'] },
+    { icon: metier.navIcons?.products  || '📦', title: 'Produits',        shortcut: 'F3', color: C.blue,    page: 'products',  badge: stats?.stockAlert || 0, items: ['Produits & Stock', 'Alertes stock', 'Inventaire', 'Catégories'] },
+    { icon: metier.navIcons?.clients   || '👥', title: 'Clients',         shortcut: 'F4', color: C.violet,  page: 'clients',   items: ['Fiche client', 'Suivi Clients', 'Versements', 'Crédits'] },
+    { icon: metier.navIcons?.suppliers || '🚚', title: 'Fournisseurs',    shortcut: 'F5', color: C.accent,  page: 'suppliers', items: ['Fournisseurs', 'Suivi', 'Versements', 'Créances'] },
+    { icon: metier.navIcons?.sales     || '🧾', title: 'Vente',           shortcut: 'F1', color: C.green,   page: 'sales',     items: ['Vente par client', 'Factures', 'Vente par jour', 'Récap.'] },
+    { icon: '🛒',                               title: 'Achat',           shortcut: 'F2', color: C.amber,   page: 'suppliers', items: ['Achat fournisseur', 'Mise à jour stock', 'Récap. Achat'] },
+    { icon: metier.navIcons?.treasury  || '💰', title: 'Entrée / Sortie', shortcut: 'F6', color: C.red,     page: 'treasury',  items: ['Dépenses', 'Caisse', 'Bénéfice', 'Zakat'] },
+    { icon: metier.navIcons?.reports   || '📊', title: 'Statistiques',    shortcut: 'F7', color: C.purple,  page: 'reports',   items: ['CA par période', 'Top produits', 'Top clients'] },
+    { icon: metier.navIcons?.settings  || '⚙️', title: 'Paramètres',     shortcut: 'F9', color: C.sub,     page: 'settings',  items: ['Infos Société', 'Sauvegarde', 'Thème'] },
+    { icon: metier.navIcons?.employees || '👨‍💼', title: 'Employés',      shortcut: 'F8', color: '#EC4899', page: 'employees', items: ['Gestion équipe', 'Performances', 'Salaires'] },
   ];
+
+  // FIX AUDIT : couleur texte bannière toujours blanche (indépendante du mode)
+  // L'ancienne logique `C.isLight ? '#fff' : '#000'` donnait du noir sur fond
+  // orange/doré en mode sombre avec certaines palettes → illisible.
+  const bannerTextColor = '#fff';
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden', fontFamily: C.fontBody }}>
@@ -119,20 +131,34 @@ export default function Dashboard({ onNavigate }) {
           <div style={{ fontSize: 10, color: C.sub, letterSpacing: 1, textTransform: 'uppercase' }}>Gestion Commerciale</div>
         </div>
 
+        {/* FIX AUDIT : couleur texte toujours '#fff' sur fond accent */}
         <div style={{
           flex: 1,
           background: `linear-gradient(135deg, ${C.accent}, ${C.accent}CC)`,
           borderRadius: 12, padding: '8px 20px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          color: C.isLight ? '#fff' : '#000',
+          color: bannerTextColor,
         }}>
-          <span style={{ fontWeight: 800 }}>BIENVENUE, ADMINISTRATEUR</span>
+          <span style={{ fontWeight: 800 }}>
+            BIENVENUE{user?.name ? `, ${user.name.toUpperCase()}` : ''}
+          </span>
           <div style={{ display: 'flex', gap: 25, fontSize: 11, fontWeight: 900 }}>
             <span>VENTES JOUR: {fmt(stats?.todayTotal || 0)}</span>
             <span>STOCK ALERTE: {stats?.stockAlert || 0}</span>
             <span>CRÉDITS: {fmt(stats?.monthCredit || 0)}</span>
           </div>
         </div>
+
+        {/* FIX AUDIT : bouton IA accessible depuis le Dashboard */}
+        {onOpenAI && (
+          <button onClick={onOpenAI} style={{
+            background: `linear-gradient(135deg,#06B6D4,#3B82F6)`,
+            border: 'none', borderRadius: 10, padding: '8px 16px',
+            color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 6,
+            boxShadow: '0 4px 14px rgba(6,182,212,0.4)', flexShrink: 0,
+          }}>🤖 Agents IA</button>
+        )}
 
         <Clock C={C} />
       </div>
@@ -168,7 +194,7 @@ export default function Dashboard({ onNavigate }) {
             textTransform: 'uppercase', letterSpacing: 1.2,
           }}>
             <span style={{ width: 30, height: 2, background: C.accent, display: 'inline-block' }} />
-            MODULES
+            MODULES — <span style={{ fontWeight: 500, fontSize: 10 }}>raccourcis F1–F9 actifs</span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 15, marginBottom: 20 }}>
@@ -191,8 +217,8 @@ export default function Dashboard({ onNavigate }) {
             onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}>
             <div style={{ fontSize: 35 }}>🧾</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 900, fontSize: 20 }}>[F8] Vente Rapide</div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>Ouvrir la caisse directement · Raccourci clavier F8</div>
+              <div style={{ fontWeight: 900, fontSize: 20 }}>[F1] Vente Rapide</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>Ouvrir la caisse directement · Raccourci clavier F1</div>
             </div>
             <div style={{ background: 'rgba(255,255,255,0.2)', padding: '10px 25px', borderRadius: 10, fontWeight: 900 }}>
               Ouvrir →
@@ -205,12 +231,11 @@ export default function Dashboard({ onNavigate }) {
           <div style={{ fontWeight: 900, fontSize: 13, color: C.text, textTransform: 'uppercase', letterSpacing: .5 }}>
             📊 Résumé rapide
           </div>
-          <StatBox label="CA Aujourd'hui" value={fmt(stats?.todayTotal || 0)}   color={C.green}  C={C} />
-          <StatBox label="CA du mois"     value={fmt(stats?.monthTotal || 0)}   color={C.accent} C={C} />
-          <StatBox label="Crédits"        value={fmt(stats?.monthCredit || 0)}  color={C.amber}  C={C} />
-          <StatBox label="Alertes stock"  value={stats?.stockAlert || 0}        color={C.red}    C={C} />
+          <StatBox label="CA Aujourd'hui" value={fmt(stats?.todayTotal || 0)}  color={C.green}  C={C} />
+          <StatBox label="CA du mois"     value={fmt(stats?.monthTotal || 0)}  color={C.accent} C={C} />
+          <StatBox label="Crédits"        value={fmt(stats?.monthCredit || 0)} color={C.amber}  C={C} />
+          <StatBox label="Alertes stock"  value={stats?.stockAlert || 0}       color={C.red}    C={C} />
 
-          {/* Mini graphique evolution */}
           {stats?.evolution?.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, textTransform: 'uppercase', letterSpacing: .6, marginBottom: 8 }}>
@@ -218,16 +243,15 @@ export default function Dashboard({ onNavigate }) {
               </div>
               <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 56 }}>
                 {stats.evolution.map((d, i) => {
-                  const max = Math.max(...stats.evolution.map(x => x.total), 1);
-                  const h   = Math.max(4, Math.round((d.total / max) * 48));
+                  const max    = Math.max(...stats.evolution.map(x => x.total), 1);
+                  const h      = Math.max(4, Math.round((d.total / max) * 48));
                   const isLast = i === stats.evolution.length - 1;
                   return (
                     <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                       <div style={{
                         width: '100%', height: h,
                         background: isLast ? C.accentGrad : `linear-gradient(180deg,${C.accent}60,${C.accent}25)`,
-                        borderRadius: '3px 3px 0 0',
-                        transition: 'height .3s',
+                        borderRadius: '3px 3px 0 0', transition: 'height .3s',
                       }} />
                       <span style={{ color: C.muted, fontSize: 8 }}>{d.label}</span>
                     </div>
@@ -235,6 +259,18 @@ export default function Dashboard({ onNavigate }) {
                 })}
               </div>
             </div>
+          )}
+
+          {/* FIX AUDIT : accès IA depuis le panneau résumé */}
+          {onOpenAI && (
+            <button onClick={onOpenAI} style={{
+              marginTop: 8,
+              background: `linear-gradient(135deg,#06B6D4,#3B82F6)`,
+              border: 'none', borderRadius: 10, padding: '10px',
+              color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
+            }}>✨ Ouvrir les Agents IA</button>
           )}
         </div>
       </div>

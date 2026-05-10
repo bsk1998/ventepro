@@ -11,26 +11,30 @@ import Employees from './pages/Employees';
 import Treasury from './pages/Treasury';
 import { Reports, Quotes, Settings } from './pages/Other';
 import { db, seedIfEmpty } from './db';
-import { DS, ANIMATIONS_CSS } from './designSystem'; //
+import { DS, ANIMATIONS_CSS } from './designSystem';
+// ── FIX AUDIT : composants orphelins maintenant montés ────────────────────
+import { ToastContainer }  from './components/Feedback';
+import GlobalSearch         from './components/GlobalSearch';
+import QuickAIButton        from './components/QuickAIButton';
+import UpdateChecker        from './components/UpdateChecker';
 
-// ─── INJECTION DU CSS GLOBAL (Animations & Scrollbars) ──────────────────────
 function GlobalStyles() {
-  return <style>{ANIMATIONS_CSS}</style>; //
+  return <style>{ANIMATIONS_CSS}</style>;
 }
 
-// ─── BOUTON RETOUR FLOTTANT (DESIGN SYSTEM COMPLIANT) ───────────────────────
-function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, onLogout }) {
+// ─── BOUTON RETOUR ────────────────────────────────────────────────────────────
+function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, onLogout, onNavigate, currentPage }) {
   const [exp, setExp] = useState(false);
   return (
     <div style={{
-      position:'fixed', top:0, left:0, right:0, zIndex: DS.zIndex.sticky, //[cite: 2]
+      position:'fixed', top:0, left:0, right:0, zIndex: DS.zIndex.sticky,
       height: 48,
       display:'flex', alignItems:'center', gap: DS.spacing.sm,
       padding:`0 ${DS.spacing.lg}px`,
       background: 'rgba(255,255,255,0.92)',
       backdropFilter:'blur(14px)', WebkitBackdropFilter:'blur(14px)',
       borderBottom: `1.5px solid ${DS.colors.primaryBd}`,
-      boxShadow: DS.shadows.sm, //[cite: 2]
+      boxShadow: DS.shadows.sm,
     }}>
 
       {/* Retour */}
@@ -39,14 +43,15 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
         style={{
           display:'flex', alignItems:'center', gap: 7,
           background: exp ? `linear-gradient(135deg, ${DS.colors.primary}, ${DS.colors.secondary})` : DS.colors.primaryLt,
-          border: `1.5px solid ${DS.colors.primaryBd}`, 
-          borderRadius: DS.radius.md, 
+          border: `1.5px solid ${DS.colors.primaryBd}`,
+          borderRadius: DS.radius.md,
           padding: '5px 14px',
-          color: exp ? DS.colors.surface : DS.colors.secondary, 
+          color: exp ? DS.colors.surface : DS.colors.secondary,
           fontWeight: 800, fontSize: 13, cursor: 'pointer',
-          transition: DS.transitions.fast, //
+          transition: DS.transitions.fast,
           boxShadow: exp ? DS.shadows.md : 'none',
           fontFamily: DS.typography.body.fontFamily,
+          flexShrink: 0,
         }}>
         <span>←</span>
         <div style={{ lineHeight: 1.1 }}>
@@ -56,18 +61,22 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
       </button>
 
       {/* Nom page */}
-      <div style={{ ...DS.typography.h3, color: DS.colors.neutralDk, marginLeft: DS.spacing.sm }}>
+      <div style={{ ...DS.typography.h3, color: DS.colors.neutralDk, marginLeft: DS.spacing.sm, flexShrink: 0 }}>
         {pageName}
       </div>
 
-      <div style={{ flex: 1 }}/>
+      {/* FIX AUDIT: GlobalSearch maintenant visible dans le header */}
+      <div style={{ flex: 1, maxWidth: 340, margin: '0 12px' }}>
+        <GlobalSearch onNavigate={onNavigate} onOpenAI={onOpenAI} />
+      </div>
 
       {/* Alerte stock */}
       {alerts > 0 && (
-        <div className="vx-pulse" style={{ // Animation pulsante du DS[cite: 2]
-          background: DS.colors.dangerLt, border: `1.5px solid ${DS.colors.dangerBd}`, 
-          borderRadius: DS.radius.sm, padding: '3px 10px', color: DS.colors.danger, 
-          fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 
+        <div className="vx-pulse" style={{
+          background: DS.colors.dangerLt, border: `1.5px solid ${DS.colors.dangerBd}`,
+          borderRadius: DS.radius.sm, padding: '3px 10px', color: DS.colors.danger,
+          fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', gap: 5,
+          flexShrink: 0,
         }}>
           ⚠ Stock: <span style={{ background: DS.colors.danger, color: '#fff', borderRadius: 20,
             fontSize: 10, fontWeight: 900, padding: '1px 6px' }}>{alerts}</span>
@@ -75,9 +84,10 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
       )}
 
       {/* Utilisateur */}
-      <div style={{ 
+      <div style={{
         display:'flex', alignItems:'center', gap:6, background: DS.colors.secondaryLt,
-        border: `1px solid ${DS.colors.secondaryBd}`, borderRadius: DS.radius.sm, padding: '4px 10px' 
+        border: `1px solid ${DS.colors.secondaryBd}`, borderRadius: DS.radius.sm, padding: '4px 10px',
+        flexShrink: 0,
       }}>
         <span style={{ fontSize: 14 }}>{isAdmin ? '👑' : '👨‍💼'}</span>
         <div style={{ lineHeight: 1.2 }}>
@@ -92,6 +102,7 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
         border: 'none', borderRadius: DS.radius.sm, padding: '5px 12px',
         color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer',
         display: 'flex', alignItems: 'center', gap: 5, boxShadow: DS.shadows.sm,
+        flexShrink: 0,
       }}>🤖 IA</button>
 
       {/* Déconnexion */}
@@ -99,6 +110,7 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
         background: 'transparent', border: `1.5px solid ${DS.colors.dangerBd}`,
         borderRadius: DS.radius.sm, padding: '5px 10px',
         color: DS.colors.danger, fontSize: 11, cursor: 'pointer', fontWeight: 600,
+        flexShrink: 0,
       }}>🚪</button>
     </div>
   );
@@ -168,7 +180,13 @@ function AppInner() {
       background: DS.colors.bg,
       fontFamily: DS.typography.body.fontFamily,
     }}>
-      <GlobalStyles /> {/* Injection des styles et animations */}
+      <GlobalStyles />
+
+      {/* FIX AUDIT #1 : ToastContainer jamais monté → maintenant ici */}
+      <ToastContainer />
+
+      {/* FIX AUDIT #6 : UpdateChecker jamais monté → maintenant ici */}
+      <UpdateChecker />
 
       {showAI && (
         <AIAgentPanel onClose={()=>setShowAI(false)} liveData={liveData}
@@ -182,7 +200,11 @@ function AppInner() {
           pageName={PAGE_NAMES[currentPage]||currentPage}
           alerts={alerts}
           onOpenAI={()=>{ loadLiveData(); setShowAI(true); }}
-          isAdmin={isAdmin} user={user} onLogout={handleLogout}
+          isAdmin={isAdmin}
+          user={user}
+          onLogout={handleLogout}
+          onNavigate={navigate}
+          currentPage={currentPage}
         />
       )}
 
@@ -192,8 +214,7 @@ function AppInner() {
         overflow: onDashboard ? 'hidden' : 'auto',
         padding: 0,
       }}>
-        {/* Rendu des pages */}
-        {currentPage === 'dashboard' && <Dashboard onNavigate={navigate} user={user} isAdmin={isAdmin}/>}
+        {currentPage === 'dashboard' && <Dashboard onNavigate={navigate} user={user} isAdmin={isAdmin} onOpenAI={()=>{ loadLiveData(); setShowAI(true); }}/>}
         {currentPage === 'products'  && <Products/>}
         {currentPage === 'sales'     && <Sales/>}
         {currentPage === 'clients'   && <Clients/>}
@@ -204,6 +225,14 @@ function AppInner() {
         {currentPage === 'quotes'    && <Quotes/>}
         {currentPage === 'settings'  && <Settings/>}
       </div>
+
+      {/* FIX AUDIT #6 : QuickAIButton flottant contextuel par page */}
+      {!onDashboard && (
+        <QuickAIButton
+          currentPage={currentPage}
+          onOpenAI={()=>{ loadLiveData(); setShowAI(true); }}
+        />
+      )}
     </div>
   );
 }

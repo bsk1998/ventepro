@@ -2,456 +2,845 @@ import { useTheme } from '../ThemeContext';
 import { useState, useRef, useEffect } from 'react';
 import { db, fmt, nowISO } from '../db';
 
+// ════════════════════════════════════════════════════════════════════════════
+// AGENTS V2 — Prompts enrichis, suggestions contextuelles
+// ════════════════════════════════════════════════════════════════════════════
+
 const AGENTS_ADMIN = [
   {
-    id:'stock', icon:'📦', name:'Agent Stock', color:'#FFC04D',
-    desc:'Gestion complète · Alertes · Analyses',
-    prompt:`Tu es un EXPERT EN GESTION DE STOCK avec ACCÈS TOTAL à la base de données.
+    id: 'stock', icon: '📦', name: 'Agent Stock', color: '#F59E0B',
+    tagline: 'Ruptures · Prédictions · Commandes',
+    prompt: `Tu es l'Agent Stock expert de VenteX AI, spécialisé en gestion de stock pour commerces algériens.
 
-COMPÉTENCES PRINCIPALES:
-- Identifier les produits en rupture et stock critique
-- Recommander les quantités à commander
-- Analyser les mouvements de stock
-- Calculer le coût du stock immobilisé
-- Identifier les produits lents à vendre
-- Suggestions d'optimisation du réapprovisionnement
+RÈGLES DE FORMATAGE STRICTES:
+- Utilise ## pour les titres de section (ex: ## Ruptures Critiques)
+- Utilise **texte** pour mettre en évidence les chiffres et noms importants
+- Utilise des listes avec • pour les items
+- Toujours afficher les montants avec le format: **X XXX DA**
+- Maximum 3 niveaux de hiérarchie
+- Sois concis, précis, orienté action
 
-DONNÉES DISPONIBLES: historique complet des ventes, stocks actuels, prix d'achat.
+EXPERTISE COMPLÈTE:
+• Identifier ruptures et stocks critiques (≤ minStock)
+• Calculer vélocité de vente et prédire les ruptures
+• Recommander les quantités à commander (couverture 30 jours)
+• Analyser rotation et stocks dormants (jamais vendus depuis 60j)
+• Calculer valeur du stock immobilisé (prix achat × quantité)
+• Identifier produits à promouvoir pour écouler le stock
 
-RÈGLES: Sois précis, donne des chiffres exacts, propose des actions concrètes.`,
-    suggestions:['Quels produits réapprovisionner ?','Stock critique ?','Coût stock total ?','Produits les plus lents ?']
+Réponds toujours en français professionnel adapté au contexte algérien.`,
+    suggestions: [
+      '🔴 Ruptures et stock critique',
+      '📦 Que commander cette semaine ?',
+      '💰 Valeur totale du stock',
+      '📊 Analyse rotation produits',
+      '⚠️ Produits périmés bientôt',
+    ],
   },
   {
-    id:'sales', icon:'🧾', name:'Agent Ventes', color:'#00E5A0',
-    desc:'CA · Tendances · Conseils commerciaux',
-    prompt:`Tu es un EXPERT COMMERCIAL avec ACCÈS à TOUS les chiffres de vente.
+    id: 'sales', icon: '🧾', name: 'Agent Ventes', color: '#10B981',
+    tagline: 'CA · Tendances · Conseils commerciaux',
+    prompt: `Tu es l'Agent Ventes expert de VenteX AI, conseiller commercial pour le marché algérien.
 
-COMPÉTENCES:
-- Calculer le chiffre d'affaires par période
-- Identifier les clients VIP et les pertes
-- Analyser les tendances de vente
-- Conseiller sur l'augmentation du CA
-- Identifier les heures/jours de pointe
-- Recommander les meilleurs produits à promouvoir
+FORMATAGE:
+- ## pour sections, **gras** pour chiffres clés
+- Listes • pour les recommandations
+- Toujours inclure les montants en DA
+- Format date: JJ/MM/AAAA
 
-TÂCHES PRATIQUES:
-- Générer un rapport de vente rapide
-- Identifier les clients à relancer
-- Suggestions pour augmenter les ventes
-- Analyse comparative de périodes
+EXPERTISE COMPLÈTE:
+• Calculer et analyser le CA par heure, jour, semaine, mois
+• Identifier tendances, saisonnalité, produits stars
+• Clients VIP (fort CA) et clients à risque (absents > 30 jours)
+• Heures et jours de forte activité
+• Taux de transformation et panier moyen
+• Conseils concrets pour augmenter le CA de 20-30%
+• Analyse crédits en cours et risques d'impayés
 
-RÈGLES: Sois commercial, donne des conseils actionnables.`,
-    suggestions:['CA de cette semaine ?','Meilleur client ?','Produits vedettes ?','Heures de pointe ?']
+Sois commercial, dynamique, orienté résultats.`,
+    suggestions: [
+      '📈 CA aujourd\'hui et ce mois',
+      '🏆 Top 10 produits du mois',
+      '👥 Meilleurs clients',
+      '💡 Comment booster les ventes ?',
+      '⏰ Heures de pointe',
+    ],
   },
   {
-    id:'clients', icon:'👥', name:'Agent Clients', color:'#4D9FFF',
-    desc:'Crédits · Recouvrement · Fidélité',
-    prompt:`Tu es un GESTIONNAIRE CLIENTS EXPERT pour le recouvrement et la fidélité.
+    id: 'clients', icon: '👥', name: 'Agent Clients', color: '#3B82F6',
+    tagline: 'Crédits · Fidélité · Recouvrement',
+    prompt: `Tu es l'Agent Clients expert de VenteX AI, spécialiste en gestion clientèle et recouvrement pour le marché algérien.
 
-COMPÉTENCES:
-- Identifier tous les clients avec crédits non payés
-- Montants exacts de chaque créance
-- Historique d'achat complet par client
-- Segmenter les clients (VIP, réguliers, occasionnels)
-- Conseiller sur le recouvrement
-- Calculer la valeur à vie de chaque client
+FORMATAGE:
+- Tableaux texte avec | pour les listes de débiteurs
+- **Montants** toujours en gras
+- Plans d'action numérotés (1., 2., 3.)
+- Urgence: 🔴 critique, 🟡 attention, 🟢 OK
 
-TÂCHES SPÉCIFIQUES:
-- Lister les débiteurs avec montants
-- Proposer un plan de relance
-- Identifier les meilleurs clients fidèles
-- Évaluer le risque de créance douteuse
-- Calculer les relances nécessaires
+EXPERTISE COMPLÈTE:
+• Identifier et classer les débiteurs par montant et ancienneté
+• Calculer créances totales et risque de non-recouvrement
+• Stratégies de relance adaptées au contexte algérien
+• Segmentation: VIP (>50K DA), Régulier, Occasionnel, Inactif
+• Fidélité: fréquence d'achat, dernière visite, historique complet
+• Score de risque client basé sur comportement de paiement
 
-RÈGLES: Sois proactif, donne des nombres concrets, des plans d'action.`,
-    suggestions:['Qui doit le plus ?','Plan de recouvrement ?','Clients fidèles ?','Risque créances ?']
+Sois proactif, bienveillant mais ferme sur le recouvrement.`,
+    suggestions: [
+      '💳 Liste des débiteurs',
+      '🔴 Créances urgentes (>30 jours)',
+      '⭐ Clients VIP à chouchouter',
+      '📞 Plan de relance cette semaine',
+      '📊 Segmentation complète clients',
+    ],
   },
   {
-    id:'finance', icon:'💰', name:'Agent Finance', color:'#C084FC',
-    desc:'Trésorerie · Marges · Zakat · Bilans',
-    prompt:`Tu es un EXPERT COMPTABLE & FINANCIER avec ACCÈS COMPLET aux données économiques.
+    id: 'finance', icon: '💰', name: 'Agent Finance', color: '#A855F7',
+    tagline: 'Trésorerie · Marges · Zakat · Bilan',
+    prompt: `Tu es l'Agent Finance expert de VenteX AI, comptable pour commerces algériens.
 
-COMPÉTENCES PRINCIPALES:
-- Calcul trésorerie en temps réel
-- Analyse des marges par produit/catégorie
-- Rentabilité globale et par période
-- CALCUL ZAKAT ISLAMIQUE (2.5% des actifs)
-- Bilans détaillés
-- Ratios de rentabilité
-- Conseils d'optimisation fiscale & financière
+FORMATAGE:
+- ## pour chaque section du bilan
+- **Montants** toujours en DA
+- Tableaux texte avec | pour les chiffres comparatifs
+- Pourcentages avec %, signaux: 🟢 bon, 🟡 acceptable, 🔴 mauvais
 
-TÂCHES SPÉCIFIQUES:
-✓ Créer des FACTURES d'achat/vente
-✓ Calculer la ZAKAT du commerce (avec détails)
-✓ Générer des BILANS mensuels/annuels
-✓ Analyser la rentabilité par catégorie
-✓ Créer des RAPPORTS FINANCIERS
-✓ Identifier les points de dépenses
-✓ Recommander des optimisations
+EXPERTISE COMPLÈTE:
+• Bilan financier complet mensuel et annuel
+• Analyse marges brutes et nettes par produit et catégorie
+• Ratios de rentabilité (marge/CA, retour sur stock)
+• CALCUL ZAKAT ISLAMIQUE: base = valeur stock + créances - dettes × 2.5%
+  → Nisab 2024 en Algérie ≈ 250 000 DA (vérifier avec un imam)
+• Seuil de rentabilité et point mort
+• Analyse des dépenses par catégorie
+• Projections à 3 et 12 mois basées sur la tendance actuelle
 
-FORMAT ZAKAT: Montant net de marchandises + créances - dettes = base zakat.
-
-RÈGLES: Sois rigoureux, transparent, donne des fichiers exploitables.`,
-    suggestions:['Bilan du mois ?','Calculer zakat ?','Marges par catégorie ?','Créer facture ?']
+Sois rigoureux, transparent, respectueux des valeurs islamiques.`,
+    suggestions: [
+      '📊 Bilan complet du mois',
+      '🕌 Calculer la Zakat',
+      '📈 Analyse des marges par catégorie',
+      '💸 Rapport dépenses détaillé',
+      '🔮 Projection chiffre d\'affaires',
+    ],
   },
   {
-    id:'hr', icon:'👨‍💼', name:'Agent RH', color:'#8B5CF6',
-    desc:'Vendeurs · Performance · Masse salariale',
-    prompt:`Tu es un RESPONSABLE RH EXPERT avec données complètes sur performance.
+    id: 'hr', icon: '👨‍💼', name: 'Agent RH', color: '#6366F1',
+    tagline: 'Performance · Salaires · Équipe',
+    prompt: `Tu es l'Agent RH expert de VenteX AI, responsable RH pour commerce algérien.
 
-COMPÉTENCES:
-- Classement vendeurs par CA généré
-- Nombre et valeur des ventes par vendeur
-- Analyse ROI salaire vs CA généré
-- Ratio productivité vendeur
-- Performance quotidienne/hebdomadaire
-- Recommandations de motivation/sanction
-- Calcul commissions basées sur performances
+FORMATAGE:
+- Classements numérotés avec émojis de médaille 🥇🥈🥉
+- **Métriques clés** en gras
+- Tableaux comparatifs avec |
 
-TÂCHES:
-- Classement vendeurs (CA généré, nombre ventes)
-- Analyse individuelle + comparative
-- Identifier les stars et underperformers
-- Proposer des commissions basées sur performance
-- Genérer rapports de performance
-- Recommander bonifications/améliorations
+EXPERTISE COMPLÈTE:
+• Classement vendeurs par CA généré avec évolution
+• Calcul ROI: CA généré / salaire mensuel (ratio idéal > 10x)
+• Performance individuelle par période
+• Masse salariale totale et % du CA (idéal < 15%)
+• Analyse productivité: ventes par heure travaillée
+• Recommandations de motivation, formation, sanction
 
-RÈGLES: Sois objectif, base-toi sur les chiffres réels, sois constructif.`,
-    suggestions:['Meilleur vendeur ?','Performance équipe ?','Ratio CA/Salaire ?','Commissions ?']
+Sois objectif, bienveillant, constructif, confidentiel.`,
+    suggestions: [
+      '🏆 Classement des vendeurs',
+      '💼 Masse salariale et ratio CA',
+      '📊 Performance par employé',
+      '💡 Recommandations équipe',
+      '📈 Évolution des performances',
+    ],
   },
   {
-    id:'assistant', icon:'🤖', name:'Assistant Général', color:'#00D4FF',
-    desc:'Aide globale · Conseils · Questions',
-    prompt:`Tu es l'ASSISTANT GÉNÉRAL expert en gestion commerciale pour VenteX AI.
+    id: 'assistant', icon: '✨', name: 'Assistant IA', color: '#06B6D4',
+    tagline: 'Aide · Stratégie · Résumé journalier',
+    prompt: `Tu es l'Assistant général de VenteX AI, conseiller stratégique personnel pour commerçants algériens.
 
-DOMAINES D'EXPERTISE:
-- Conseils stratégiques généraux
-- Utilisation du logiciel VenteX AI
-- Bonnes pratiques commerciales
-- Gestion quotidienne du magasin
-- Questions sur les fonctionnalités
-- Optimisation globale du business
-- Réponses aux questions générales
+FORMATAGE:
+- Réponses structurées mais conversationnelles
+- ## pour les plans d'action
+- Listes • pour les conseils
+- Toujours ancré dans le contexte algérien (DA, Ramadan, habitudes locales)
 
-TÂCHES:
-- Expliquer les fonctionnalités du logiciel
-- Donner des conseils de gestion
-- Répondre aux questions métier
-- Proposer des améliorations
-- Fournir du soutien général
+EXPERTISE COMPLÈTE:
+• Résumé intelligent de la journée avec points clés et alertes
+• Conseils stratégiques adaptés à la taille et au secteur
+• Guide d'utilisation de VenteX AI (fonctionnalités, raccourcis)
+• Bonnes pratiques commerciales pour l'Algérie (saisonnalité, culture)
+• Réponses à toutes les questions sur la gestion commerciale
+• Aide à la prise de décision basée sur les données
 
-ADAPTATION: Adapte tes réponses au contexte algérien, au secteur d'activité.`,
-    suggestions:['Comment vendre plus ?','Utiliser le logiciel ?','Conseils stratégiques ?','Résumé de la journée ?']
+Sois chaleureux, encourageant et toujours utile.`,
+    suggestions: [
+      '📋 Résumé complet de la journée',
+      '💡 3 conseils pour aujourd\'hui',
+      '🎯 Plan d\'action cette semaine',
+      '❓ Comment utiliser VenteX AI ?',
+      '🌟 Bonnes pratiques commerce',
+    ],
   },
 ];
 
 const AGENTS_EMPLOYEE = [
   {
-    id:'stock', icon:'📦', name:'Agent Stock', color:'#FFC04D',
-    desc:'Consulter le stock en temps réel',
-    prompt:`Tu es un assistant stock pour les employés.
-
-ACCÈS LIMITÉ:
-✓ Stock actuel de tous les produits
-✓ Prix de vente uniquement
-✓ Disponibilité produits
-
-ACCÈS REFUSÉ:
-✗ Prix d'achat
-✗ Coûts
-✗ Données financières
-
-TÂCHES:
-- Vérifier disponibilité produit
-- Consulter prix de vente
-- Alertes stock bas
-- Informer sur remplaçants possibles`,
-    suggestions:['Stock de ce produit ?','Produits en rupture ?','Prix de vente ?']
+    id: 'stock', icon: '📦', name: 'Stock', color: '#F59E0B',
+    tagline: 'Consulter disponibilités',
+    prompt: `Tu es un assistant stock pour employés. Accès limité: stock actuel et prix de vente uniquement. Sois utile et précis.`,
+    suggestions: ['Stock disponible ?', 'Prix de vente ?', 'Produit en rupture ?'],
   },
   {
-    id:'assistant', icon:'🤖', name:'Assistant', color:'#00D4FF',
-    desc:'Aide et conseils pour la journée',
-    prompt:`Tu es un assistant pour employés/vendeurs.
-
-ACCÈS:
-✓ Aide sur les ventes
-✓ Conseils pratiques
-✓ Questions sur le travail
-✓ Assistance générale
-
-ACCÈS REFUSÉ:
-✗ Données confidentielles
-✗ Informations financières
-✗ Données RH
-
-Sois encourageant, pratique et utile.`,
-    suggestions:['Comment faire vente ?','Questions rapides ?','Aide ?']
+    id: 'assistant', icon: '✨', name: 'Assistant', color: '#06B6D4',
+    tagline: 'Aide quotidienne',
+    prompt: `Tu es un assistant bienveillant pour vendeurs en commerce algérien. Aide pratique, encouragements, infos produits.`,
+    suggestions: ['Comment faire une vente ?', 'Infos sur ce produit ?', 'Aide rapide'],
   },
 ];
 
-async function getAllData() {
+// ════════════════════════════════════════════════════════════════════════════
+// CHARGEMENT DONNÉES ENRICHI
+// ════════════════════════════════════════════════════════════════════════════
+
+async function loadAllData() {
   const [products, clients, suppliers, employees, sales, saleItems, payments, expenses] = await Promise.all([
     db.products.toArray(),
     db.clients.toArray(),
-    db.suppliers.toArray(),
-    db.employees.toArray(),
+    db.suppliers.toArray().catch(() => []),
+    db.employees.toArray().catch(() => []),
     db.sales.orderBy('createdAt').reverse().limit(300).toArray(),
     db.saleItems.toArray(),
-    db.payments.toArray(),
-    db.expenses.toArray(),
+    db.payments.toArray().catch(() => []),
+    db.expenses.toArray().catch(() => []),
   ]);
 
+  const today = new Date().toISOString().slice(0, 10);
+  const month = new Date().toISOString().slice(0, 7);
+
+  const todaySales = sales.filter(s => s.createdAt?.startsWith(today));
+  const monthSales = sales.filter(s => s.createdAt?.startsWith(month));
+
   const enrichedClients = clients.map(c => {
-    const clientSales = sales.filter(s => s.clientId === c.id);
-    return {
-      ...c,
-      totalAchete: clientSales.reduce((s,v) => s+Number(v.total||0), 0),
-      totalPaye: clientSales.reduce((s,v) => s+Number(v.paid||0), 0),
-      nombreAchats: clientSales.length,
-      derniereVisite: clientSales[0]?.createdAt || null,
-    };
+    const cs = sales.filter(s => s.clientId === c.id);
+    const totalAchete = cs.reduce((s, v) => s + Number(v.total || 0), 0);
+    const totalPaye   = cs.reduce((s, v) => s + Number(v.paid  || 0), 0);
+    return { ...c, totalAchete, totalPaye, dette: totalAchete - totalPaye, nombreAchats: cs.length, derniereVisite: cs[0]?.createdAt || null };
   });
 
   const enrichedProducts = products.map(p => {
-    const prodItems = saleItems.filter(i => i.productId === p.id);
-    const totalVendu = prodItems.reduce((s,i) => s+i.qty, 0);
-    const caGenere = prodItems.reduce((s,i) => s+i.unitPrice*i.qty, 0);
-    return { ...p, totalVendu, caGenere };
+    const items = saleItems.filter(i => i.productId === p.id);
+    return { ...p, totalVendu: items.reduce((s, i) => s + i.qty, 0), caGenere: items.reduce((s, i) => s + i.unitPrice * i.qty, 0) };
   });
 
-  return { products: enrichedProducts, clients: enrichedClients, suppliers, employees, sales, saleItems, payments, expenses };
+  const caToday    = todaySales.reduce((s, v) => s + Number(v.total || 0), 0);
+  const caMonth    = monthSales.reduce((s, v) => s + Number(v.total || 0), 0);
+  const stockAlerts = products.filter(p => p.stock <= (p.minStock || 5)).length;
+  const totalCredits = sales.filter(s => s.status === 'crédit').reduce((s, v) => s + Math.max(0, Number(v.total || 0) - Number(v.paid || 0)), 0);
+  const clientsDebiteurs = enrichedClients.filter(c => c.dette > 0).length;
+
+  return {
+    products: enrichedProducts, clients: enrichedClients, suppliers,
+    employees, sales, saleItems, payments, expenses,
+    todaySales, monthSales,
+    stats: { caToday, caMonth, stockAlerts, totalCredits, clientsDebiteurs },
+  };
 }
 
-function localFallback(agentId, question, data) {
-  const { products=[], clients=[], sales=[], employees=[], expenses=[] } = data;
-  const q = question.toLowerCase();
+function buildContext(agentId, data, role) {
+  if (role === 'employee') {
+    return `PRODUITS: ${JSON.stringify(data.products?.slice(0, 30).map(p => ({ n: p.name, s: p.stock, prix: p.sellPrice, unit: p.unit })))}`;
+  }
+  const resume = `=== RÉSUMÉ ===\nCA aujourd'hui: ${fmt(data.stats?.caToday)} | CA mois: ${fmt(data.stats?.caMonth)} | Alertes stock: ${data.stats?.stockAlerts} | Crédits impayés: ${fmt(data.stats?.totalCredits)} | Clients débiteurs: ${data.stats?.clientsDebiteurs}`;
 
   if (agentId === 'stock') {
-    const ruptures = products.filter(p=>p.stock===0);
-    const bas = products.filter(p=>p.stock>0&&p.stock<=p.minStock);
-    const topVendu = [...products].sort((a,b)=>(b.totalVendu||0)-(a.totalVendu||0)).slice(0,5);
-    return `📦 RAPPORT STOCK\n\n🔴 RUPTURES (${ruptures.length}): ${ruptures.map(p=>p.name).join(', ')||'Aucune'}\n🟡 STOCK BAS (${bas.length}): ${bas.map(p=>`${p.name}(${p.stock})`).join(', ')||'Aucun'}\n\n🏆 Top 5 plus vendus:\n${topVendu.map((p,i)=>`${i+1}. ${p.name}: ${p.totalVendu} unités`).join('\n')}`;
+    return `${resume}\n\nPRODUITS (${data.products?.length}): ${JSON.stringify(data.products?.slice(0, 50).map(p => ({ id: p.id, n: p.name, cat: p.category, stock: p.stock, min: p.minStock || 5, buy: p.buyPrice, sell: p.sellPrice, vendu: p.totalVendu, ca: p.caGenere, expiry: p.expiry })))}`;
   }
   if (agentId === 'sales') {
-    const ca = sales.reduce((s,v)=>s+Number(v.total||0),0);
-    const today = new Date().toISOString().slice(0,10);
-    const caToday = sales.filter(s=>s.createdAt?.startsWith(today)).reduce((s,v)=>s+Number(v.total||0),0);
-    const credits = sales.filter(s=>s.status==='crédit').reduce((s,v)=>s+Math.max(0,Number(v.total||0)-Number(v.paid||0)),0);
-    return `🧾 RAPPORT VENTES\n\n💰 CA total: ${fmt(ca)}\n📅 CA aujourd'hui: ${fmt(caToday)}\n📊 Ventes: ${sales.length}\n📝 Crédits: ${fmt(credits)}`;
+    return `${resume}\n\nVENTES (${data.sales?.length}): ${JSON.stringify(data.sales?.slice(0, 100).map(s => ({ id: s.id, client: s.clientName, total: s.total, paid: s.paid, status: s.status, mode: s.payMode, date: s.createdAt?.slice(0, 10) })))}\n\nTOP PRODUITS: ${JSON.stringify(data.products?.sort((a, b) => (b.totalVendu || 0) - (a.totalVendu || 0)).slice(0, 15).map(p => ({ n: p.name, vendu: p.totalVendu, ca: p.caGenere })))}`;
   }
   if (agentId === 'clients') {
-    const debiteurs = clients.filter(c=>(c.totalAchete-c.totalPaye)>0).sort((a,b)=>(b.totalAchete-b.totalPaye)-(a.totalAchete-a.totalPaye));
-    const totalCredit = debiteurs.reduce((s,c)=>s+(c.totalAchete-c.totalPaye),0);
-    return `👥 RAPPORT CLIENTS\n\nTotal: ${clients.length} | Débiteurs: ${debiteurs.length}\nCredit total: ${fmt(totalCredit)}\n\nTop 5 débiteurs:\n${debiteurs.slice(0,5).map(c=>`• ${c.name}: ${fmt(c.totalAchete-c.totalPaye)} DA`).join('\n')}`;
+    return `${resume}\n\nCLIENTS (${data.clients?.length}): ${JSON.stringify(data.clients?.slice(0, 40).map(c => ({ id: c.id, n: c.name, tel: c.phone, achete: c.totalAchete, paye: c.totalPaye, dette: c.dette, achats: c.nombreAchats, derniere: c.derniereVisite?.slice(0, 10) })))}`;
   }
   if (agentId === 'finance') {
-    const ca = sales.reduce((s,v)=>s+Number(v.total||0),0);
-    const achat = products.reduce((s,p)=>s+(p.stock||0)*(p.buyPrice||0),0);
-    const dep = expenses.reduce((s,e)=>s+Number(e.amount||0),0);
-    const benefice = ca - dep;
-    const zakat = benefice * 0.025;
-    return `💰 BILAN FINANCIER\n\n📊 Chiffre d'affaires: ${fmt(ca)}\n📦 Stock immobilisé: ${fmt(achat)}\n💸 Dépenses: ${fmt(dep)}\n📈 Bénéfice brut: ${fmt(benefice)}\n🕌 ZAKAT (2.5%): ${fmt(zakat)}`;
+    const stockVal = data.products?.reduce((s, p) => s + (p.stock || 0) * (p.buyPrice || 0), 0) || 0;
+    const depTotal = data.expenses?.reduce((s, e) => s + Number(e.amount || 0), 0) || 0;
+    return `${resume}\n\nVALEUR STOCK: ${stockVal}\nDÉPENSES TOTAL: ${depTotal}\nDÉPENSES: ${JSON.stringify(data.expenses?.slice(0, 30))}\nVENTES MOIS: ${JSON.stringify(data.monthSales?.slice(0, 80).map(s => ({ t: s.total, p: s.paid, st: s.status, d: s.createdAt?.slice(0, 10) })))}`;
   }
   if (agentId === 'hr') {
-    const actifs = employees.filter(e=>e.active);
-    const masse = actifs.reduce((s,e)=>s+Number(e.salary||0),0);
-    return `👨‍💼 RAPPORT RH\n\n👥 Employés actifs: ${actifs.length}\n💼 Masse salariale/mois: ${fmt(masse)}\n\n${actifs.map(e=>`• ${e.name} (${e.role}): ${fmt(e.salary)}`).join('\n')}`;
+    const byVendeur = data.sales?.reduce((acc, s) => { if (s.employeeName) { acc[s.employeeName] = (acc[s.employeeName] || 0) + Number(s.total || 0); } return acc; }, {});
+    return `${resume}\n\nEMPLOYÉS: ${JSON.stringify(data.employees)}\nCA PAR VENDEUR: ${JSON.stringify(byVendeur)}`;
   }
-  return `🤖 Mode hors-ligne\n\nProduits: ${products.length} | Clients: ${clients.length} | Ventes: ${sales.length}`;
+  return `${resume}\n\nPRODUITS: ${data.products?.length} | CLIENTS: ${data.clients?.length} | VENTES: ${data.sales?.length}`;
 }
 
-export default function AIAgentPanel({ onClose, userRole='admin' }) {
-  const { theme: C, applyFromAgent } = useTheme();
-  const AGENTS = userRole === 'admin' ? AGENTS_ADMIN : AGENTS_EMPLOYEE;
-  const [activeAgent, setActiveAgent] = useState(AGENTS[0]);
-  const [msgs, setMsgs] = useState({});
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [offline, setOffline] = useState(false);
-  const [allData, setAllData] = useState(null);
-  const endRef = useRef();
+function localFallback(agentId, data) {
+  const { products = [], clients = [], sales = [], employees = [], expenses = [] } = data;
+  const now = new Date();
 
-  useEffect(() => {
-    getAllData().then(setAllData);
-  }, []);
+  if (agentId === 'stock') {
+    const rupt = products.filter(p => p.stock === 0);
+    const bas  = products.filter(p => p.stock > 0 && p.stock <= (p.minStock || 5));
+    const top  = [...products].sort((a, b) => (b.totalVendu || 0) - (a.totalVendu || 0)).slice(0, 5);
+    const val  = products.reduce((s, p) => s + (p.stock || 0) * (p.buyPrice || 0), 0);
+    return `## Rapport Stock (mode local)\n\n**🔴 Ruptures (${rupt.length}):**\n${rupt.slice(0, 8).map(p => `• **${p.name}**`).join('\n') || '• Aucune rupture'}\n\n**🟡 Stock bas (${bas.length}):**\n${bas.slice(0, 8).map(p => `• **${p.name}** — ${p.stock} ${p.unit || 'pce'}`).join('\n') || '• Aucun'}\n\n## Top 5 Produits Vendus\n\n${top.map((p, i) => `${i + 1}. **${p.name}** — ${p.totalVendu || 0} vendus`).join('\n')}\n\n## Valeur Stock\n\n**Valeur totale:** ${fmt(val)} (prix achat)`;
+  }
+  if (agentId === 'sales') {
+    const today = now.toISOString().slice(0, 10);
+    const caT = sales.filter(s => s.createdAt?.startsWith(today)).reduce((s, v) => s + Number(v.total || 0), 0);
+    const caM = sales.reduce((s, v) => s + Number(v.total || 0), 0);
+    const credits = sales.filter(s => s.status === 'crédit').reduce((s, v) => s + Math.max(0, Number(v.total || 0) - Number(v.paid || 0)), 0);
+    const panier = sales.length > 0 ? caM / sales.length : 0;
+    return `## Rapport Ventes (mode local)\n\n**CA aujourd'hui:** ${fmt(caT)}\n**CA total enregistré:** ${fmt(caM)}\n**Nombre de ventes:** ${sales.length}\n**Panier moyen:** ${fmt(panier)}\n**Crédits impayés:** ${fmt(credits)}\n\n## Statut\n\n🟢 Données disponibles en lecture locale.`;
+  }
+  if (agentId === 'clients') {
+    const debiteurs = clients.filter(c => (c.totalAchete - c.totalPaye) > 0).sort((a, b) => (b.totalAchete - b.totalPaye) - (a.totalAchete - a.totalPaye));
+    const totalDette = debiteurs.reduce((s, c) => s + (c.totalAchete - c.totalPaye), 0);
+    return `## Rapport Clients (mode local)\n\n**Total clients:** ${clients.length}\n**Débiteurs:** ${debiteurs.length}\n**Créances totales:** ${fmt(totalDette)}\n\n## Top Débiteurs\n\n${debiteurs.slice(0, 6).map((c, i) => `${i + 1}. **${c.name}** — ${fmt(c.totalAchete - c.totalPaye)}`).join('\n') || '• Aucun crédit en cours ✅'}`;
+  }
+  if (agentId === 'finance') {
+    const ca  = sales.reduce((s, v) => s + Number(v.total || 0), 0);
+    const stk = products.reduce((s, p) => s + (p.stock || 0) * (p.buyPrice || 0), 0);
+    const dep = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const ben = ca - dep;
+    const zakat = Math.max(0, ben * 0.025);
+    return `## Bilan Financier (mode local)\n\n**Chiffre d'affaires:** ${fmt(ca)}\n**Stock immobilisé:** ${fmt(stk)}\n**Dépenses totales:** ${fmt(dep)}\n**Bénéfice brut:** ${fmt(ben)}\n\n## Zakat\n\n**Base de calcul:** ${fmt(ben)}\n**Zakat à verser (2.5%):** **${fmt(zakat)}**`;
+  }
+  if (agentId === 'hr') {
+    const actifs = employees.filter(e => e.active);
+    const masse = actifs.reduce((s, e) => s + Number(e.salary || 0), 0);
+    const byV = sales.reduce((acc, s) => { if (s.employeeName) acc[s.employeeName] = (acc[s.employeeName] || 0) + Number(s.total || 0); return acc; }, {});
+    return `## Rapport RH (mode local)\n\n**Employés actifs:** ${actifs.length}\n**Masse salariale:** ${fmt(masse)}/mois\n\n## Performance Vendeurs\n\n${Object.entries(byV).sort((a, b) => b[1] - a[1]).map(([n, ca], i) => `${i + 1}. **${n}** — ${fmt(ca)} CA`).join('\n') || '• Aucune vente associée à un vendeur'}`;
+  }
+  return `## Données disponibles (mode local)\n\n**Produits:** ${products.length}\n**Clients:** ${clients.length}\n**Ventes:** ${sales.length}\n**Employés actifs:** ${employees.filter(e => e.active).length}`;
+}
 
-  const agentMsgs = msgs[activeAgent.id] || [{
-    role:'ai',
-    text:`Bienvenue ! Je suis votre **${activeAgent.name}**.\n\n${activeAgent.desc}.\n\nJe peux vous aider avec des tâches spécifiques et générer des rapports. Comment puis-je vous assister ? 🚀`
-  }];
+// ════════════════════════════════════════════════════════════════════════════
+// MARKDOWN RENDERER
+// ════════════════════════════════════════════════════════════════════════════
 
-  async function send(q) {
-    const question = q||input;
-    if (!question.trim()||loading) return;
-    setInput('');
-    const newMsgs = [...agentMsgs, {role:'user', text:question}];
-    setMsgs(m=>({...m,[activeAgent.id]:newMsgs}));
-    setLoading(true);
-
-    const data = allData || await getAllData();
-    let reply = '';
-
-    try {
-      const dataCtx = userRole === 'admin'
-        ? `PRODUITS (${data.products?.length}): ${JSON.stringify(data.products?.slice(0,20))}
-CLIENTS (${data.clients?.length}): ${JSON.stringify(data.clients?.slice(0,15))}
-VENTES (dernières 50): ${JSON.stringify(data.sales?.slice(0,50))}
-EMPLOYÉS: ${JSON.stringify(data.employees)}
-DÉPENSES: ${JSON.stringify(data.expenses?.slice(0,20))}
-DATE ACTUELLE: ${new Date().toLocaleDateString('fr-DZ',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}`
-        : `PRODUITS (stock et prix vente): ${JSON.stringify(data.products?.map(p=>({id:p.id,name:p.name,stock:p.stock,unit:p.unit,sellPrice:p.sellPrice})))}`;
-
-      const controller = new AbortController();
-      const timeout = setTimeout(()=>controller.abort(), 15000);
-
-      const key = localStorage.getItem('groq_key') || '';
-      if (!key) {
-        reply = "⚠️ Clé API Groq manquante.\n\nCopyez votre clé gratuite depuis console.groq.com\nCliquez sur la roue d'engrenage pour la configurer.";
-        setOffline(true);
-      } else {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method:'POST', signal:controller.signal,
-          headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
-          body: JSON.stringify({
-            model:'llama-3.3-70b-versatile', max_tokens:2000,
-            messages:[
-              {role:'system', content:`${activeAgent.prompt}\n\nDONNEES COMPLÈTES:\n${dataCtx}\n\nRÈGLES ABSOLUES:\n1. Réponds UNIQUEMENT à ce qui est demandé\n2. Sois précis avec les chiffres\n3. Utilise le format JSON pour les rapports\n4. Français naturel et professionnel\n5. Propose des actions concrètes`},
-              ...newMsgs.filter((_,i)=>i>0).map(m=>({role:m.role==='ai'?'assistant':'user',content:m.text}))
-            ]
-          })
-        });
-        clearTimeout(timeout);
-        const d = await res.json();
-        reply = d.choices?.[0]?.message?.content || 'Erreur de réponse.';
-        setOffline(false);
-      }
-    } catch {
-      setOffline(true);
-      reply = localFallback(activeAgent.id, question, data) + '\n\n_💡 Mode hors-ligne — analyse locale._';
+function parseInline(text) {
+  if (!text) return null;
+  const bold = text.split(/(\*\*[^*]+\*\*)/g);
+  return bold.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} style={{ fontWeight: 800 }}>{part.slice(2, -2)}</strong>;
     }
+    const code = part.split(/(`[^`]+`)/g);
+    if (code.length > 1) {
+      return code.map((cp, j) =>
+        cp.startsWith('`') && cp.endsWith('`')
+          ? <code key={j} style={{ background: 'rgba(255,255,255,0.12)', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace', fontSize: 12 }}>{cp.slice(1, -1)}</code>
+          : <span key={j}>{cp}</span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
 
-    setMsgs(m=>({...m,[activeAgent.id]:[...newMsgs,{role:'ai',text:reply}]}));
-    setLoading(false);
-    setTimeout(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),100);
+function MarkdownRenderer({ text, accent }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  const els = [];
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    if (!t) { els.push(<div key={i} style={{ height: 5 }} />); return; }
+    if (t.startsWith('## '))  { els.push(<div key={i} style={{ fontWeight: 900, fontSize: 12.5, color: accent, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 14, marginBottom: 5, paddingBottom: 4, borderBottom: `1px solid ${accent}25` }}>{parseInline(t.slice(3))}</div>); return; }
+    if (t.startsWith('### ')) { els.push(<div key={i} style={{ fontWeight: 800, fontSize: 12.5, color: accent, marginTop: 9, marginBottom: 3 }}>{parseInline(t.slice(4))}</div>); return; }
+    if (t === '---')          { els.push(<hr key={i} style={{ border: 'none', borderTop: `1px solid ${accent}20`, margin: '8px 0' }} />); return; }
+
+    const numMatch = t.match(/^(\d+)[.)]\s+(.+)/);
+    if (numMatch) {
+      els.push(<div key={i} style={{ display: 'flex', gap: 8, marginBottom: 2, paddingLeft: 2 }}><span style={{ color: accent, fontWeight: 800, fontSize: 11, minWidth: 20, flexShrink: 0 }}>{numMatch[1]}.</span><span style={{ lineHeight: 1.65 }}>{parseInline(numMatch[2])}</span></div>);
+      return;
+    }
+    if (t.startsWith('• ') || t.startsWith('- ') || t.startsWith('* ')) {
+      els.push(<div key={i} style={{ display: 'flex', gap: 8, marginBottom: 3, paddingLeft: 2 }}><span style={{ color: accent, flexShrink: 0, marginTop: 4, fontSize: 8 }}>◆</span><span style={{ lineHeight: 1.65 }}>{parseInline(t.slice(2))}</span></div>);
+      return;
+    }
+    els.push(<div key={i} style={{ lineHeight: 1.7, marginBottom: 1 }}>{parseInline(t)}</div>);
+  });
+  return <div style={{ fontSize: 13 }}>{els}</div>;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MESSAGE BUBBLE
+// ════════════════════════════════════════════════════════════════════════════
+
+function Bubble({ msg, color, icon, isLight, streaming }) {
+  const [copied, setCopied] = useState(false);
+  const isUser = msg.role === 'user';
+
+  function copy() {
+    navigator.clipboard.writeText(msg.text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  if (isUser) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14, animation: 'msgIn .2s ease' }}>
+        <div style={{
+          maxWidth: '76%',
+          background: `linear-gradient(135deg, ${color}, ${color}CC)`,
+          borderRadius: '16px 16px 4px 16px',
+          padding: '10px 15px', fontSize: 13.5, lineHeight: 1.6,
+          color: '#000', boxShadow: `0 4px 14px ${color}35`,
+        }}>
+          <div style={{ fontWeight: 600 }}>{msg.text}</div>
+          <div style={{ fontSize: 9, opacity: 0.55, marginTop: 4, textAlign: 'right' }}>{msg.time}</div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div style={{position:'fixed',inset:0,background:'#00000099',zIndex:200,
-      display:'flex',alignItems:'center',justifyContent:'center',
-      backdropFilter:'blur(4px)'}}>
-      <div style={{background:'#0E1220',border:'1px solid #1B2135',borderRadius:24,
-        width:960,maxWidth:'97vw',height:'90vh',display:'flex',overflow:'hidden',
-        boxShadow:'0 40px 120px #000e, 0 0 80px rgba(0,212,255,0.06)'}}>
+    <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'flex-start', animation: 'msgIn .2s ease' }}>
+      <div style={{
+        width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+        background: color + '18', border: `1.5px solid ${color}35`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
+        boxShadow: `0 2px 8px ${color}20`,
+      }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          background: isLight ? 'rgba(255,255,255,0.95)' : '#111827',
+          border: `1px solid ${isLight ? '#E2E8F0' : color + '20'}`,
+          borderRadius: '4px 16px 16px 16px',
+          padding: '13px 15px',
+          boxShadow: isLight ? '0 2px 10px rgba(0,0,0,0.07)' : '0 4px 18px rgba(0,0,0,0.35)',
+          color: isLight ? '#1E293B' : '#EDF1FF',
+        }}>
+          <MarkdownRenderer text={msg.text} accent={color} />
+          {streaming && (
+            <span style={{ display: 'inline-block', width: 6, height: 14, background: color, borderRadius: 2, marginLeft: 3, verticalAlign: 'middle', animation: 'blink .7s infinite' }} />
+          )}
+          {!streaming && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 7, borderTop: `1px solid ${color}12` }}>
+              <span style={{ fontSize: 9, color: isLight ? '#CBD5E1' : '#2D3748' }}>{msg.time}</span>
+              <button onClick={copy} style={{
+                background: copied ? color + '20' : 'transparent',
+                border: `1px solid ${copied ? color + '40' : 'transparent'}`,
+                borderRadius: 6, padding: '2px 9px',
+                color: copied ? color : (isLight ? '#CBD5E1' : '#2D3748'),
+                cursor: 'pointer', fontSize: 10, fontWeight: 600, transition: 'all 0.15s',
+              }}>{copied ? '✓ Copié !' : '📋 Copier'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Sidebar */}
-        <div style={{width:250,background:'#0A0D18',borderRight:'1px solid #1B2135',
-          display:'flex',flexDirection:'column',padding:'20px 12px'}}>
-          <div style={{padding:'0 8px 20px'}}>
-            <div style={{fontWeight:900,fontSize:16,color:'#00D4FF',letterSpacing:-.5}}>🤖 Agents IA</div>
-            <div style={{color:offline?'#FFC04D':'#00E5A0',fontSize:11,marginTop:4,display:'flex',alignItems:'center',gap:5}}>
-              <div style={{width:6,height:6,borderRadius:'50%',background:offline?'#FFC04D':'#00E5A0'}}/>
-              {offline?'Mode hors-ligne':'Connecté'}
+function TypingDots({ color, icon }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'flex-start' }}>
+      <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: color + '18', border: `1.5px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>{icon}</div>
+      <div style={{ background: '#111827', border: `1px solid ${color}20`, borderRadius: '4px 16px 16px 16px', padding: '14px 18px', display: 'flex', gap: 5, alignItems: 'center' }}>
+        {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: color, animation: `typeDot 1.2s infinite ${i * 0.2}s` }} />)}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COMPOSANT PRINCIPAL
+// ════════════════════════════════════════════════════════════════════════════
+
+export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgentId = null }) {
+  const { theme: C } = useTheme();
+  const isLight = C.isLight;
+  const agents = userRole === 'admin' ? AGENTS_ADMIN : AGENTS_EMPLOYEE;
+  const defaultAgent = defaultAgentId ? (agents.find(a => a.id === defaultAgentId) || agents[0]) : agents[0];
+
+  const [activeAgent, setActiveAgent] = useState(defaultAgent);
+  const [msgs,        setMsgs]        = useState({});
+  const [input,       setInput]       = useState('');
+  const [loading,     setLoading]     = useState(false);
+  const [streaming,   setStreaming]   = useState(false);
+  const [offline,     setOffline]     = useState(false);
+  const [allData,     setAllData]     = useState(null);
+  const [badges,      setBadges]      = useState({});
+
+  const endRef   = useRef();
+  const inputRef = useRef();
+
+  const getTime = () => new Date().toLocaleTimeString('fr-DZ', { hour: '2-digit', minute: '2-digit' });
+
+  useEffect(() => {
+    loadAllData().then(data => {
+      setAllData(data);
+      setBadges({
+        stock:     data.stats.stockAlerts,
+        sales:     data.todaySales?.length || 0,
+        clients:   data.stats.clientsDebiteurs,
+        finance:   0,
+        hr:        data.employees?.filter(e => e.active).length || 0,
+        assistant: 0,
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (defaultAgentId) { const a = agents.find(x => x.id === defaultAgentId); if (a) setActiveAgent(a); }
+  }, [defaultAgentId]); // eslint-disable-line
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, [activeAgent]);
+
+  const agentMsgs = msgs[activeAgent.id] || [{
+    role: 'ai',
+    text: `## Bonjour ! Je suis votre ${activeAgent.name}\n\n${activeAgent.tagline}\n\nJe suis connecté à vos données en temps réel. Que puis-je analyser pour vous ?`,
+    time: getTime(),
+  }];
+
+  async function simulateStream(fullText, agentId, baseHistory) {
+    const words = fullText.split(' ');
+    let built = '';
+    for (let i = 0; i < words.length; i++) {
+      built += (i === 0 ? '' : ' ') + words[i];
+      setMsgs(m => ({ ...m, [agentId]: [...baseHistory, { role: 'ai', text: built, time: getTime(), _streaming: true }] }));
+      const delay = fullText.length > 800 ? (i % 8 === 0 ? 12 : 0) : 18;
+      if (delay) await new Promise(r => setTimeout(r, delay));
+    }
+    return built;
+  }
+
+  async function send(question) {
+    const q = (question || input).trim();
+    if (!q || loading) return;
+    setInput('');
+
+    const time = getTime();
+    const userMsg = { role: 'user', text: q, time };
+    const history = [...agentMsgs, userMsg];
+    setMsgs(m => ({ ...m, [activeAgent.id]: history }));
+    setLoading(true);
+
+    const data = allData || await loadAllData();
+    let reply = '';
+
+    try {
+      const key = localStorage.getItem('groq_key') || '';
+      if (!key) {
+        reply = `## Clé API Groq manquante\n\nPour activer l'IA complète :\n\n1. Allez sur **console.groq.com**\n2. Créez un compte gratuit\n3. Copiez votre clé API\n4. Dans VenteX AI : **Paramètres → Clé Groq**\n\n---\n\n_Voici une analyse locale de vos données :_\n\n${localFallback(activeAgent.id, data)}`;
+        setOffline(true);
+      } else {
+        const ctx = buildContext(activeAgent.id, data, userRole);
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 25000);
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST', signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile', max_tokens: 2500, temperature: 0.65,
+            messages: [
+              { role: 'system', content: `${activeAgent.prompt}\n\n════ DONNÉES EN TEMPS RÉEL ════\n${ctx}\n\nDATE ET HEURE: ${new Date().toLocaleString('fr-DZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` },
+              ...history.filter((_, i) => i > 0).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text })),
+            ],
+          }),
+        });
+        clearTimeout(timer);
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error?.message || `Erreur ${res.status}`);
+        reply = d.choices?.[0]?.message?.content || 'Aucune réponse.';
+        setOffline(false);
+      }
+    } catch (err) {
+      setOffline(true);
+      reply = err.name === 'AbortError'
+        ? `## Délai dépassé\n\nLa requête a pris trop de temps. Vérifiez votre connexion internet.\n\n---\n\n${localFallback(activeAgent.id, data)}`
+        : `## Erreur de connexion\n\n**${err.message}**\n\n---\n\n${localFallback(activeAgent.id, data)}`;
+    }
+
+    setLoading(false);
+    setStreaming(true);
+
+    // Streaming simulé
+    const placeholder = [...history, { role: 'ai', text: '', time: getTime(), _streaming: true }];
+    setMsgs(m => ({ ...m, [activeAgent.id]: placeholder }));
+    await simulateStream(reply, activeAgent.id, history);
+
+    // Finaliser message (sans flag _streaming)
+    setMsgs(m => ({ ...m, [activeAgent.id]: [...history, { role: 'ai', text: reply, time: getTime() }] }));
+    setStreaming(false);
+    setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+  }
+
+  // Couleurs UI
+  const bg    = isLight ? '#F1F5F9' : '#08090F';
+  const sideB = isLight ? '#FFFFFF' : '#070910';
+  const chatB = isLight ? '#F8FAFC' : '#0B0D16';
+  const bd    = isLight ? '#E2E8F0' : '#151C2E';
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(10px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: C.fontBody,
+    }}>
+      <style>{`
+        @keyframes msgIn    { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes typeDot  { 0%,80%,100% { transform:translateY(0); } 40% { transform:translateY(-5px); } }
+        @keyframes blink    { 0%,100% { opacity:1; } 50% { opacity:0; } }
+        @keyframes panelIn  { from { opacity:0; transform:scale(0.96) translateY(12px); } to { opacity:1; transform:scale(1) translateY(0); } }
+        @keyframes pulseDot { 0%,100% { box-shadow:0 0 0 0 currentColor; } 50% { box-shadow:0 0 0 4px transparent; } }
+        .ai-agent-scroll::-webkit-scrollbar { width: 4px; }
+        .ai-agent-scroll::-webkit-scrollbar-thumb { background: #2D3748; border-radius: 99px; }
+      `}</style>
+
+      <div style={{
+        width: 1040, maxWidth: '97vw', height: '91vh',
+        background: bg, border: `1px solid ${bd}`,
+        borderRadius: 22, display: 'flex', overflow: 'hidden',
+        boxShadow: '0 48px 140px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)',
+        animation: 'panelIn .28s cubic-bezier(0.34,1.56,0.64,1)',
+      }}>
+
+        {/* ══════════════ SIDEBAR ══════════════ */}
+        <div style={{
+          width: 252, flexShrink: 0,
+          background: sideB, borderRight: `1px solid ${bd}`,
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Header sidebar */}
+          <div style={{ padding: '17px 15px 13px', borderBottom: `1px solid ${bd}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 11,
+                background: 'linear-gradient(135deg,#06B6D4,#3B82F6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18, boxShadow: '0 4px 14px rgba(6,182,212,0.4)',
+              }}>✨</div>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 14, color: isLight ? '#0F172A' : '#EDF1FF', letterSpacing: -0.3 }}>Agents IA</div>
+                <div style={{ fontSize: 10, color: isLight ? '#64748B' : '#4A5568', marginTop: 1 }}>VenteX AI · Données live</div>
+              </div>
+            </div>
+            {/* Statut connexion */}
+            <div style={{
+              background: offline ? '#78350F18' : '#064E3B18',
+              border: `1px solid ${offline ? '#F59E0B35' : '#10B98135'}`,
+              borderRadius: 8, padding: '5px 10px',
+              display: 'flex', alignItems: 'center', gap: 7,
+            }}>
+              <div style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: offline ? '#F59E0B' : '#10B981',
+                boxShadow: offline ? 'none' : '0 0 7px #10B981',
+              }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: offline ? '#F59E0B' : '#10B981' }}>
+                {offline ? 'Mode local · sans IA' : 'IA active · Groq'}
+              </span>
+              {(loading || streaming) && <div style={{ marginLeft: 'auto', width: 14, height: 14, border: `2px solid ${activeAgent.color}`, borderTop: `2px solid transparent`, borderRadius: '50%', animation: 'typeDot 0.7s linear infinite' }} />}
             </div>
           </div>
 
-          {AGENTS.map(a=>(
-            <button key={a.id} onClick={()=>setActiveAgent(a)} style={{
-              display:'flex',alignItems:'center',gap:10,padding:'11px 12px',
-              borderRadius:12,border:'none',cursor:'pointer',textAlign:'left',marginBottom:5,
-              background:activeAgent.id===a.id?a.color+'18':'none',
-              borderLeft:`3px solid ${activeAgent.id===a.id?a.color:'transparent'}`,
-              transition:'all .15s',
-            }}>
-              <span style={{fontSize:20}}>{a.icon}</span>
-              <div>
-                <div style={{fontSize:12,fontWeight:700,color:activeAgent.id===a.id?a.color:'#EDF1FF'}}>{a.name}</div>
-                <div style={{fontSize:10,color:'#3A4260',marginTop:1,lineHeight:1.2}}>{a.desc}</div>
-              </div>
-            </button>
-          ))}
+          {/* Liste agents */}
+          <div className="ai-agent-scroll" style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
+            {agents.map(agent => {
+              const isAct = activeAgent.id === agent.id;
+              const b = badges[agent.id];
+              return (
+                <button key={agent.id} onClick={() => !loading && !streaming && setActiveAgent(agent)} style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 11px', borderRadius: 12, border: 'none',
+                  cursor: loading ? 'not-allowed' : 'pointer', textAlign: 'left', marginBottom: 3,
+                  background: isAct ? agent.color + '18' : 'transparent',
+                  outline: isAct ? `2px solid ${agent.color}30` : 'none',
+                  transition: 'all 0.15s', opacity: loading && !isAct ? 0.5 : 1,
+                  borderLeft: `3px solid ${isAct ? agent.color : 'transparent'}`,
+                }}
+                onMouseEnter={e => { if (!isAct && !loading) e.currentTarget.style.background = isLight ? '#F1F5F9' : '#0F1320'; }}
+                onMouseLeave={e => { if (!isAct) e.currentTarget.style.background = isAct ? agent.color + '18' : 'transparent'; }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+                    background: isAct ? agent.color + '22' : (isLight ? '#F8FAFC' : '#141B2D'),
+                    border: `1.5px solid ${isAct ? agent.color + '50' : 'transparent'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+                  }}>{agent.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: isAct ? agent.color : (isLight ? '#334155' : '#C4CBD8') }}>{agent.name}</div>
+                    <div style={{ fontSize: 10, color: isLight ? '#94A3B8' : '#394364', marginTop: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.tagline}</div>
+                  </div>
+                  {b > 0 && (
+                    <div style={{
+                      background: agent.id === 'clients' ? '#EF4444' : agent.color,
+                      color: agent.id === 'clients' ? '#fff' : '#000',
+                      fontSize: 9, fontWeight: 900, borderRadius: 20, padding: '2px 7px', flexShrink: 0,
+                    }}>{b}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-          <div style={{flex:1}}/>
-          <button onClick={onClose} style={{background:'#FF4D6A10',border:'1px solid #FF4D6A25',
-            borderRadius:10,padding:'9px',color:'#FF4D6A',fontWeight:700,cursor:'pointer',fontSize:12,width:'100%'}}>
-            ✕ Fermer
+          {/* Stats live */}
+          {allData && (
+            <div style={{ padding: '11px 13px', borderTop: `1px solid ${bd}`, background: isLight ? '#F8FAFC' : '#06080E' }}>
+              <div style={{ fontSize: 9, fontWeight: 800, color: isLight ? '#CBD5E1' : '#2D3748', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>
+                Données en direct
+              </div>
+              {[
+                { l: "CA Aujourd'hui", v: fmt(allData.stats.caToday),     c: '#10B981' },
+                { l: 'Alertes stock',  v: allData.stats.stockAlerts,       c: '#EF4444' },
+                { l: 'Crédits dus',    v: fmt(allData.stats.totalCredits), c: '#F59E0B' },
+              ].map(({ l, v, c }) => (
+                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, color: isLight ? '#64748B' : '#4A5568' }}>{l}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: c }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Bouton fermer */}
+          <button onClick={onClose} style={{
+            margin: '10px 12px 13px',
+            background: 'transparent', border: `1.5px solid #EF444430`,
+            borderRadius: 10, padding: '9px',
+            color: '#EF4444', fontWeight: 700, cursor: 'pointer', fontSize: 12,
+            transition: 'all 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#EF444415'; e.currentTarget.style.borderColor = '#EF444460'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#EF444430'; }}>
+            ✕ Fermer le panel
           </button>
         </div>
 
-        {/* Chat */}
-        <div style={{flex:1,display:'flex',flexDirection:'column'}}>
-          <div style={{padding:'18px 22px',borderBottom:'1px solid #1B2135',
-            background:activeAgent.color+'08',display:'flex',alignItems:'center',gap:14}}>
-            <span style={{fontSize:30}}>{activeAgent.icon}</span>
-            <div>
-              <div style={{fontWeight:800,fontSize:16,color:activeAgent.color}}>{activeAgent.name}</div>
-              <div style={{color:'#7A85AA',fontSize:12,marginTop:2}}>{activeAgent.desc}</div>
+        {/* ══════════════ ZONE CHAT ══════════════ */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: chatB }}>
+
+          {/* Header agent */}
+          <div style={{
+            padding: '13px 20px', borderBottom: `1px solid ${bd}`,
+            background: isLight ? '#FFFFFF' : '#0D1020',
+            display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <div style={{
+              width: 46, height: 46, borderRadius: 13, flexShrink: 0,
+              background: `linear-gradient(135deg, ${activeAgent.color}30, ${activeAgent.color}15)`,
+              border: `2px solid ${activeAgent.color}40`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24,
+              boxShadow: `0 4px 16px ${activeAgent.color}20`,
+            }}>{activeAgent.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 900, fontSize: 16, color: activeAgent.color, letterSpacing: -0.3 }}>{activeAgent.name}</div>
+              <div style={{ fontSize: 12, color: isLight ? '#64748B' : '#4A5568', marginTop: 2 }}>{activeAgent.tagline}</div>
             </div>
-            {loading&&<div style={{marginLeft:'auto',color:'#7A85AA',fontSize:12}}>⏳ Analyse...</div>}
+            {/* Chips contextuels */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {allData && activeAgent.id === 'stock' && allData.stats.stockAlerts > 0 && (
+                <Chip label={`🔴 ${allData.stats.stockAlerts} alertes`} color="#EF4444" />
+              )}
+              {allData && activeAgent.id === 'sales' && (
+                <Chip label={`📈 ${fmt(allData.stats.caToday)}`} color="#10B981" />
+              )}
+              {allData && activeAgent.id === 'clients' && allData.stats.clientsDebiteurs > 0 && (
+                <Chip label={`⚠️ ${allData.stats.clientsDebiteurs} débiteurs`} color="#F59E0B" />
+              )}
+              {(loading || streaming) && (
+                <Chip label={streaming ? '✍️ Rédaction...' : '🔍 Analyse...'} color={activeAgent.color} pulse />
+              )}
+            </div>
           </div>
 
-          <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:10}}>
-            {agentMsgs.map((m,i)=>(
-              <div key={i} style={{
-                alignSelf:m.role==='user'?'flex-end':'flex-start',
-                background:m.role==='user'?activeAgent.color:(C.chatAiBg||'#1B2135'),
-                color:m.role==='user'?'#fff':(C.chatAiText||'#EDF1FF'),
-                padding:'11px 16px',
-                borderRadius:m.role==='user'?'16px 16px 4px 16px':'16px 16px 16px 4px',
-                maxWidth:'82%',fontSize:13.5,lineHeight:1.7,whiteSpace:'pre-wrap',
-                border:m.role==='ai'?'1px solid #1B2135':'none',
-                boxShadow:m.role==='ai'?'0 4px 12px rgba(0,0,0,0.3)':'none',
-              }}>{m.text.replace(/\*\*(.*?)\*\*/g,'$1')}</div>
+          {/* Messages */}
+          <div className="ai-agent-scroll" style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 8px' }}>
+            {agentMsgs.map((m, i) => (
+              <Bubble
+                key={i} msg={m}
+                color={activeAgent.color} icon={activeAgent.icon}
+                isLight={isLight} streaming={!!m._streaming && i === agentMsgs.length - 1}
+              />
             ))}
-            {loading&&(
-              <div style={{alignSelf:'flex-start',background:'#1B2135',border:'1px solid #1B2135',
-                padding:'11px 16px',borderRadius:'16px 16px 16px 4px',
-                display:'flex',gap:6,alignItems:'center'}}>
-                <div style={{width:8,height:8,borderRadius:'50%',background:activeAgent.color,animation:'pulse 1s infinite'}}/>
-                <div style={{width:8,height:8,borderRadius:'50%',background:activeAgent.color,animation:'pulse 1s infinite .2s',opacity:.7}}/>
-                <div style={{width:8,height:8,borderRadius:'50%',background:activeAgent.color,animation:'pulse 1s infinite .4s',opacity:.4}}/>
-              </div>
-            )}
-            <div ref={endRef}/>
+            {loading && !streaming && <TypingDots color={activeAgent.color} icon={activeAgent.icon} />}
+            <div ref={endRef} />
           </div>
 
-          <div style={{padding:'8px 18px',display:'flex',gap:6,flexWrap:'wrap',borderTop:'1px solid #1B2135'}}>
-            {activeAgent.suggestions.map(s=>(
-              <button key={s} onClick={()=>send(s)} style={{
-                background:activeAgent.color+'12',border:`1px solid ${activeAgent.color}28`,
-                borderRadius:20,padding:'5px 14px',color:activeAgent.color,
-                fontSize:11,cursor:'pointer',fontWeight:600,transition:'all .15s'}}
-                onMouseEnter={e=>e.currentTarget.style.background=activeAgent.color+'25'}
-                onMouseLeave={e=>e.currentTarget.style.background=activeAgent.color+'12'}>
+          {/* Suggestions */}
+          <div style={{
+            padding: '8px 16px', borderTop: `1px solid ${bd}`,
+            background: isLight ? '#FFFFFF' : '#0A0C15',
+            display: 'flex', gap: 6, flexWrap: 'wrap',
+          }}>
+            {activeAgent.suggestions.map(s => (
+              <button key={s} onClick={() => send(s)} disabled={loading || streaming} style={{
+                background: (loading || streaming) ? 'transparent' : activeAgent.color + '10',
+                border: `1.5px solid ${(loading || streaming) ? bd : activeAgent.color + '28'}`,
+                borderRadius: 20, padding: '4px 13px',
+                color: (loading || streaming) ? (isLight ? '#CBD5E1' : '#2D3748') : activeAgent.color,
+                fontSize: 11, cursor: (loading || streaming) ? 'not-allowed' : 'pointer',
+                fontWeight: 600, transition: 'all 0.15s', opacity: (loading || streaming) ? 0.45 : 1,
+              }}
+              onMouseEnter={e => { if (!loading && !streaming) e.currentTarget.style.background = activeAgent.color + '22'; }}
+              onMouseLeave={e => { if (!loading && !streaming) e.currentTarget.style.background = activeAgent.color + '10'; }}>
                 {s}
               </button>
             ))}
           </div>
 
-          <div style={{padding:'14px 18px',display:'flex',gap:10,borderTop:'1px solid #1B2135'}}>
-            <input value={input} onChange={e=>setInput(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
-              placeholder={`Demander à ${activeAgent.name}...`}
-              style={{flex:1,background:'#07090F',border:'1px solid #1B2135',borderRadius:12,
-                padding:'12px 16px',color:'#EDF1FF',fontSize:14,outline:'none',
-                transition:'border-color .2s'}}
-              onFocus={e=>e.target.style.borderColor=activeAgent.color}
-              onBlur={e=>e.target.style.borderColor='#1B2135'}/>
-            <button onClick={()=>send()} disabled={loading} style={{
-              background:loading?'#1B2135':`linear-gradient(135deg,${activeAgent.color},${activeAgent.color}90)`,
-              border:'none',borderRadius:12,padding:'12px 22px',
-              color:activeAgent.color==='#00D4FF'?'#000':'#fff',
-              fontWeight:900,cursor:loading?'not-allowed':'pointer',fontSize:16,
-              transition:'all .2s'}}>→</button>
+          {/* Zone saisie */}
+          <div style={{
+            padding: '12px 16px 10px', borderTop: `1px solid ${bd}`,
+            background: isLight ? '#FFFFFF' : '#08090F',
+            display: 'flex', gap: 10, alignItems: 'flex-end',
+          }}>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={`Posez votre question à ${activeAgent.name}… (Entrée pour envoyer)`}
+              rows={1}
+              style={{
+                flex: 1, resize: 'none',
+                background: isLight ? '#F8FAFC' : '#0F1320',
+                border: `2px solid ${isLight ? '#E2E8F0' : '#1B2135'}`,
+                borderRadius: 12, padding: '10px 14px',
+                color: isLight ? '#1E293B' : '#EDF1FF',
+                fontSize: 13.5, outline: 'none', fontFamily: 'inherit',
+                lineHeight: 1.5, transition: 'border-color 0.2s', boxSizing: 'border-box',
+                maxHeight: 100, overflow: 'auto',
+              }}
+              onFocus={e  => { e.target.style.borderColor = activeAgent.color; }}
+              onBlur={e   => { e.target.style.borderColor = isLight ? '#E2E8F0' : '#1B2135'; }}
+              onInput={e  => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px'; }}
+            />
+            <button onClick={() => send()} disabled={loading || streaming || !input.trim()} style={{
+              width: 46, height: 46, flexShrink: 0, borderRadius: 12, border: 'none',
+              background: (loading || streaming || !input.trim())
+                ? (isLight ? '#E2E8F0' : '#1B2135')
+                : `linear-gradient(135deg, ${activeAgent.color}, ${activeAgent.color}AA)`,
+              color: (loading || streaming || !input.trim()) ? (isLight ? '#94A3B8' : '#3A4260') : '#000',
+              cursor: (loading || streaming || !input.trim()) ? 'not-allowed' : 'pointer',
+              fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: (!loading && !streaming && input.trim()) ? `0 4px 14px ${activeAgent.color}40` : 'none',
+              transition: 'all 0.2s',
+            }}>→</button>
+          </div>
+
+          {/* Hint */}
+          <div style={{ padding: '2px 16px 7px', background: isLight ? '#FFFFFF' : '#08090F' }}>
+            <span style={{ fontSize: 10, color: isLight ? '#E2E8F0' : '#1B2135' }}>
+              ↵ Envoyer · ⇧↵ Saut de ligne · Données actualisées en temps réel
+            </span>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
+// ════════════════════════════════════════════════════════════════════════════
+// CHIP UTILITAIRE
+// ════════════════════════════════════════════════════════════════════════════
+function Chip({ label, color, pulse }) {
+  return (
+    <div style={{
+      background: color + '18', border: `1px solid ${color}35`,
+      borderRadius: 20, padding: '3px 11px', fontSize: 10, fontWeight: 700, color,
+      display: 'flex', alignItems: 'center', gap: 5,
+      boxShadow: pulse ? `0 0 8px ${color}30` : 'none',
+    }}>
+      {pulse && <div style={{ width: 5, height: 5, borderRadius: '50%', background: color, animation: 'blink .8s infinite' }} />}
+      {label}
     </div>
   );
 }
