@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import { Badge, Btn, Input, Select, Card, Modal, Loader, PageHeader, MiniChart, fmt } from '../components/ui';
 import { db, nowISO, getDashboardStats, invalidateCache } from '../db';
+import financeAgent from '../components/FinanceAgent';
+import AgentSuggestionPanel from '../components/AgentSuggestionPanel';
 
 const CATS = ['Loyer', 'Salaires', 'Électricité', 'Transport', 'Achats stock', 'Télécommunications', 'Divers'];
 
@@ -13,6 +15,7 @@ export default function Treasury() {
   const [modal,   setModal]   = useState(false);
   const [form,    setForm]    = useState({ label: '', amount: '', category: 'Divers' });
   const [saving,  setSaving]  = useState(false);
+  const [financeSuggestions, setFinanceSuggestions] = useState([]);
 
   useEffect(() => { load(); }, []);
 
@@ -24,6 +27,7 @@ export default function Treasury() {
     ]);
     setStats(s);
     setExpenses(e);
+    financeAgent.analyzeTreasury().then(result => setFinanceSuggestions(result.alerts || [])).catch(() => setFinanceSuggestions([]));
     setLoading(false);
   }
 
@@ -70,6 +74,14 @@ export default function Treasury() {
       </PageHeader>
 
       {/* ── Résumé 3 colonnes ── */}
+      <AgentSuggestionPanel
+        title="Agent Finance integre"
+        subtitle="Analyse marge, credits, charges et Zakat"
+        suggestions={financeSuggestions}
+        onDismiss={() => setFinanceSuggestions([])}
+        style={{ marginBottom: 14 }}
+      />
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 20 }}>
         {[
           { label: 'Recettes du mois', val: stats?.monthTotal || 0, type: '+', color: C.green },

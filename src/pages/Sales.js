@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTheme } from '../ThemeContext';
-import { db, nowISO, fmt, invalidateCache } from '../db';
+import { db, nowISO, fmt } from '../db';
 import { printTicket, printInvoice, printDelivery } from '../components/Ticket';
 import DetailedSalesList from './DetailedSalesList';
 import salesAgent from '../components/SalesAgent';
+import AgentSuggestionPanel from '../components/AgentSuggestionPanel';
 import { useToast, useSaleSuccess } from '../components/Feedback';
 import { DS } from '../designSystem';
 import AIAgentPanel from '../components/AIAgentPanel';
@@ -321,7 +322,7 @@ function PendingModal({ pending, onRestore, onDelete, onClose, C }) {
 // ════════════════════════════════════════════════════════════════════════════
 // PAGE VENTES
 // ════════════════════════════════════════════════════════════════════════════
-export default function Sales() {
+export default function Sales({ user }) {
   const { theme: C } = useTheme();
 
   const [items,          setItems]          = useState([]);
@@ -329,8 +330,11 @@ export default function Sales() {
   const [discount,       setDiscount]       = useState(0);
   const [products,       setProducts]       = useState([]);
   const [clients,        setClients]        = useState([]);
+  const [employees,      setEmployees]      = useState([]);
+  const [seller,         setSeller]         = useState({ name:'', id:null });
   const [unpaidSales,    setUnpaidSales]    = useState([]);
   const [suggestions,    setSuggestions]    = useState([]);
+  const [agentInsights,  setAgentInsights]  = useState({ alerts: [], suggestions: [], suggestedDiscount: null, metrics: null });
   const [showUnpaid,     setShowUnpaid]     = useState(false);
   const [showHistory,    setShowHistory]    = useState(false);
   const [showValidModal, setShowValidModal] = useState(false);
@@ -404,9 +408,19 @@ export default function Sales() {
 
   // ── Suggestions upsell ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!hasItems) { setSuggestions([]); return; }
-    salesAgent.suggestUpsell(items, client.id).then(setSuggestions).catch(() => {});
-  }, [items, client.id]);
+    let cancelled = false;
+    if (!hasItems) {
+      setSuggestions([]);
+      setAgentInsights({ alerts: [], suggestions: [], suggestedDiscount: null, metrics: null });
+      return;
+    }
+    salesAgent.analyzeCart({ items, clientId: client.id, discount }).then(result => {
+      if (cancelled) return;
+      setSuggestions(result.suggestions || []);
+      setAgentInsights(result);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [items, client.id, discount, hasItems]);
 
   // ── Raccourcis clavier ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -423,14 +437,21 @@ export default function Sales() {
   }, [hasItems, showValidModal, showNewProduct]); // eslint-disable-line
 
   async function loadData() {
-    const [p, c, u] = await Promise.all([
+    const [p, c, e, u] = await Promise.all([
       db.products.toArray(),
       db.clients.toArray(),
+      db.employees.toArray().catch(() => []),
       db.sales.where('status').equals('crédit').toArray(),
     ]);
-    setProducts(p); setClients(c); setUnpaidSales(u);
+    const activeEmployees = e.filter(emp => emp.active !== false);
+    setProducts(p); setClients(c); setEmployees(activeEmployees); setUnpaidSales(u);
+    setSeller(current => {
+      if (current.id && activeEmployees.some(emp => emp.id === current.id)) return current;
+      const fallback = activeEmployees[0];
+      return fallback ? { name: fallback.name, id: fallback.id } : { name: user?.name || '', id: null };
+    });
   }
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, []); // eslint-disable-line
 
   function resetTicket() {
     setItems([]); setDiscount(0); setClient({ name:'Passage', id:null });
@@ -452,6 +473,22 @@ export default function Sales() {
     else setItems([...items, { ...p, qty:q }]);
     setSelectedProduct(null); setSearch(''); setQty(1);
     searchRef.current?.focus();
+  }
+
+  async function addProductToCartByAgent(product, requestedQty = 1) {
+    const fresh = await db.products.get(product.id);
+    const p = fresh || product;
+    const q = Number(requestedQty) || 1;
+    if (q > 0 && Number(p.stock || 0) < q) {
+      toastMsg.warning(`Stock insuffisant: ${p.stock} ${p.unit || 'pce'}`);
+      return;
+    }
+    setItems(current => {
+      const existing = current.find(x => x.id === p.id);
+      if (existing) return current.map(x => x.id === p.id ? { ...x, qty: x.qty + q } : x);
+      return [...current, { ...p, qty: q }];
+    });
+    toastMsg.success(`IA: ${q} x ${p.name} ajoute`);
   }
 
   async function handleProductSaved(newId, newName) {
@@ -486,12 +523,14 @@ export default function Sales() {
   async function finishSale({ tvaRate, tvaAmount, grandTotal, paid, payMode, status }) {
     if (!hasItems) return;
     try {
-      const saleId = await db.sales.add({ clientName:client.name, clientId:client.id, total:grandTotal, subtotal:totalTTC, tva:tvaAmount, tvaRate, paid, discount:Number(discount)||0, payMode, status, createdAt:nowISO() });
-      for (const item of items) {
-        await db.saleItems.add({ saleId, productId:item.id, productName:item.name, qty:item.qty, buyPrice:item.buyPrice, unitPrice:item.sellPrice });
-        await db.products.update(item.id, { stock:item.stock-item.qty });
-      }
-      invalidateCache();
+      await salesAgent.executeSale({
+        items,
+        client,
+        seller,
+        userName: user?.name || '',
+        totals: { subtotal: totalTTC, discount: Number(discount) || 0, cost: totalAchats },
+        payment: { tvaRate, tvaAmount, grandTotal, paid, payMode, status },
+      });
       setShowValidModal(false); triggerSaleSuccess(grandTotal);
       toastMsg.success(status==='crédit'?'Vente en crédit enregistrée !':'Vente enregistrée !');
       resetTicket(); loadData();
@@ -529,15 +568,27 @@ export default function Sales() {
   // Couleur du mode de recherche
   const modeColors = { name:'#3B82F6', barcode:'#10B981', category:'#A855F7' };
   const modeColor  = modeColors[searchMode] || C.blue;
+  const makeDraftSale = (extra = {}) => ({
+    id: Date.now(),
+    clientName: client.name,
+    clientId: client.id,
+    total: totalTTC,
+    paid: 0,
+    discount,
+    status: 'provisoire',
+    createdAt: new Date().toISOString(),
+    ...extra,
+  });
+  const draftItems = () => items.map(i => ({ productName: i.name, qty: i.qty, unitPrice: i.sellPrice }));
 
   // ── Définition des boutons d'action (sidebar droite) ───────────────────────
   const ACTION_BTNS = [
     { icon:'🗑️', label:'Supprimer\nVente',       color:'#EF4444', action:() => setItems([]),             disabled:!hasItems,         section:null },
-    { icon:'🧾', label:'Ticket\nCaisse',          color:C.blue,   action:async()=>{ if(!hasItems)return; await printTicket({id:Date.now(),clientName:client.name,total:totalTTC,paid:totalTTC,discount,status:'payé',createdAt:new Date().toISOString()},items.map(i=>({productName:i.name,qty:i.qty,unitPrice:i.sellPrice}))); }, disabled:!hasItems },
-    { icon:'📋', label:'BL\nA4',                  color:C.blue,   action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printDelivery({id:Date.now(),clientName:client.name,total:totalTTC,paid:totalTTC,discount,status:'payé',createdAt:new Date().toISOString()},items.map(i=>({productName:i.name,qty:i.qty,unitPrice:i.sellPrice})),cl); }, disabled:!hasItems },
-    { icon:'📋', label:'BL\nA5',                  color:C.blue,   action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printDelivery({id:Date.now(),clientName:client.name,total:totalTTC,paid:totalTTC,discount,status:'payé',createdAt:new Date().toISOString(),formatA5:true},items.map(i=>({productName:i.name,qty:i.qty,unitPrice:i.sellPrice})),cl); }, disabled:!hasItems },
-    { icon:'📄', label:'Facture\nA4',              color:'#8B5CF6', action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printInvoice({id:Date.now(),clientName:client.name,total:totalTTC,paid:totalTTC,discount,status:'payé',createdAt:new Date().toISOString()},items.map(i=>({productName:i.name,qty:i.qty,unitPrice:i.sellPrice})),cl); }, disabled:!hasItems },
-    { icon:'📄', label:'Proforma',                 color:'#8B5CF6', action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printInvoice({id:Date.now(),clientName:client.name,total:totalTTC,paid:totalTTC,discount,status:'payé',proforma:true,createdAt:new Date().toISOString()},items.map(i=>({productName:i.name,qty:i.qty,unitPrice:i.sellPrice})),cl); }, disabled:!hasItems },
+    { icon:'🧾', label:'Ticket\nAperçu',          color:C.blue,   action:async()=>{ if(!hasItems)return; await printTicket(makeDraftSale(), draftItems()); }, disabled:!hasItems },
+    { icon:'📋', label:'BL\nA4',                  color:C.blue,   action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printDelivery(makeDraftSale(), draftItems(), cl); }, disabled:!hasItems },
+    { icon:'📋', label:'BL\nA5',                  color:C.blue,   action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printDelivery(makeDraftSale({formatA5:true}), draftItems(), cl); }, disabled:!hasItems },
+    { icon:'📄', label:'Facture\nAperçu',         color:'#8B5CF6', action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printInvoice(makeDraftSale(), draftItems(), cl); }, disabled:!hasItems },
+    { icon:'📄', label:'Proforma',                 color:'#8B5CF6', action:async()=>{ if(!hasItems)return; const cl=client.id?await db.clients.get(client.id).catch(()=>null):null; await printInvoice(makeDraftSale({proforma:true}), draftItems(), cl); }, disabled:!hasItems },
     { icon:'📊', label:'Liste\nVentes',            color:C.green,  action:() => setShowHistory(true),        disabled:false,         divider:true },
     { icon:'📈', label:'Analyse\nIA',              color:C.amber,  action:() => setShowAIPanel(true),        disabled:false },
     { icon:'⏸️', label:'Mettre\nAttente',          color:C.sub,    action:putOnHold,                         disabled:!hasItems,     divider:true },
@@ -565,6 +616,27 @@ export default function Sales() {
               style={{ fontSize:12, border:`2px solid ${headerBd}`, borderRadius:8, padding:'5px 8px', background:C.isLight?'#F8FAFC':C.bg, color:C.text, outline:'none', minWidth:130, fontWeight:700, cursor:'pointer' }}>
               <option value="passage">COMPTOIR</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ width:1, height:42, background:headerBd, flexShrink:0 }}/>
+
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          <div style={{ width:36, height:36, borderRadius:9, background:`linear-gradient(135deg,${C.green},#059669)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, color:'#fff' }}>👨‍💼</div>
+          <div>
+            <div style={{ fontSize:8, fontWeight:800, color:C.sub, textTransform:'uppercase', letterSpacing:1, marginBottom:3 }}>VENDEUR</div>
+            <select value={seller.id || 'login'}
+              onChange={e => {
+                if(e.target.value === 'login') setSeller({ name:user?.name || '', id:null });
+                else {
+                  const s = employees.find(emp => emp.id === parseInt(e.target.value));
+                  if(s) setSeller({ name:s.name, id:s.id });
+                }
+              }}
+              style={{ fontSize:12, border:`2px solid ${headerBd}`, borderRadius:8, padding:'5px 8px', background:C.isLight?'#F8FAFC':C.bg, color:C.text, outline:'none', minWidth:135, fontWeight:700, cursor:'pointer' }}>
+              {employees.length === 0 && <option value="login">{user?.name || 'Vendeur'}</option>}
+              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
           </div>
         </div>
@@ -739,6 +811,23 @@ export default function Sales() {
 
         {/* ── GAUCHE : Upsell + Panier ───────────────────────────────────── */}
         <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+
+          <AgentSuggestionPanel
+            title="Agent Ventes integre"
+            subtitle={agentInsights?.metrics ? `Marge estimee: ${fmt(agentInsights.metrics.profit)}` : 'Analyse panier en direct'}
+            compact
+            suggestions={[
+              ...(agentInsights.alerts || []),
+              ...(agentInsights.suggestedDiscount ? [agentInsights.suggestedDiscount] : []),
+            ].slice(0, 3)}
+            onApply={(item) => {
+              if (item.value) {
+                setDiscount(item.value);
+                toastMsg.success('Suggestion IA appliquee');
+              }
+            }}
+            style={{ margin: '6px 16px 0', flexShrink: 0 }}
+          />
 
           {/* Suggestions Upsell */}
           {suggestions.length > 0 && (
@@ -918,7 +1007,17 @@ export default function Sales() {
       {showPending     && <PendingModal pending={pendingCarts} onRestore={restoreCart} onDelete={deletePending} onClose={()=>setShowPending(false)} C={C}/>}
 
       {showAIPanel && (
-        <AIAgentPanel onClose={()=>setShowAIPanel(false)} liveData={{products,clients,sales:unpaidSales}} userRole="admin" defaultAgentId="sales"/>
+        <AIAgentPanel
+          onClose={()=>setShowAIPanel(false)}
+          liveData={{products,clients,sales:unpaidSales}}
+          userRole="admin"
+          defaultAgentId="sales"
+          moduleActions={{
+            addProductToCart: addProductToCartByAgent,
+            applyDiscount: value => setDiscount(Number(value) || 0),
+            openValidation: () => { if (hasItems) setShowValidModal(true); },
+          }}
+        />
       )}
 
       {showUnpaid && (

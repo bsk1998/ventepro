@@ -88,13 +88,11 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
       .catch(() => {});
   }, []);
 
-  // FIX AUDIT : raccourcis F1-F9 maintenant câblés sur le Dashboard
+  // Raccourcis alignés sur les modules réellement visibles.
   useEffect(() => {
-    const MAP = {
-      F1: 'sales', F2: 'suppliers', F3: 'products', F4: 'clients',
-      F5: 'suppliers', F6: 'treasury', F7: 'reports', F8: 'sales',
-      F9: 'employees',
-    };
+    const adminMap = { F1: 'sales', F2: 'suppliers', F3: 'products', F4: 'clients', F5: 'suppliers', F6: 'treasury', F7: 'reports', F8: 'employees', F9: 'settings' };
+    const employeeMap = { F1: 'sales', F3: 'products', F4: 'clients' };
+    const MAP = isAdmin ? adminMap : employeeMap;
     function handler(e) {
       if (MAP[e.key]) { e.preventDefault(); onNavigate(MAP[e.key]); }
       // Ctrl+I → ouvre l'IA depuis le Dashboard
@@ -102,9 +100,9 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
     }
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onNavigate, onOpenAI]);
+  }, [onNavigate, onOpenAI, isAdmin]);
 
-  const MODULES = [
+  const ADMIN_MODULES = [
     { icon: metier.navIcons?.products  || '📦', title: 'Produits',        shortcut: 'F3', color: C.blue,    page: 'products',  badge: stats?.stockAlert || 0, items: ['Produits & Stock', 'Alertes stock', 'Inventaire', 'Catégories'] },
     { icon: metier.navIcons?.clients   || '👥', title: 'Clients',         shortcut: 'F4', color: C.violet,  page: 'clients',   items: ['Fiche client', 'Suivi Clients', 'Versements', 'Crédits'] },
     { icon: metier.navIcons?.suppliers || '🚚', title: 'Fournisseurs',    shortcut: 'F5', color: C.accent,  page: 'suppliers', items: ['Fournisseurs', 'Suivi', 'Versements', 'Créances'] },
@@ -115,6 +113,8 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
     { icon: metier.navIcons?.settings  || '⚙️', title: 'Paramètres',     shortcut: 'F9', color: C.sub,     page: 'settings',  items: ['Infos Société', 'Sauvegarde', 'Thème'] },
     { icon: metier.navIcons?.employees || '👨‍💼', title: 'Employés',      shortcut: 'F8', color: '#EC4899', page: 'employees', items: ['Gestion équipe', 'Performances', 'Salaires'] },
   ];
+  const EMPLOYEE_MODULES = ADMIN_MODULES.filter(m => ['sales', 'products', 'clients'].includes(m.page));
+  const MODULES = isAdmin ? ADMIN_MODULES : EMPLOYEE_MODULES;
 
   // FIX AUDIT : couleur texte bannière toujours blanche (indépendante du mode)
   // L'ancienne logique `C.isLight ? '#fff' : '#000'` donnait du noir sur fond
@@ -194,7 +194,7 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
             textTransform: 'uppercase', letterSpacing: 1.2,
           }}>
             <span style={{ width: 30, height: 2, background: C.accent, display: 'inline-block' }} />
-            MODULES — <span style={{ fontWeight: 500, fontSize: 10 }}>raccourcis F1–F9 actifs</span>
+            MODULES — <span style={{ fontWeight: 500, fontSize: 10 }}>{isAdmin ? 'raccourcis F1-F9 actifs' : 'accès vendeur: F1, F3, F4'}</span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 15, marginBottom: 20 }}>

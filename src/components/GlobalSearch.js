@@ -2,14 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../ThemeContext';
 import { db, fmt } from '../db';
 
-export default function GlobalSearch({ onNavigate, onOpenAI }) {
+export default function GlobalSearch({ onNavigate, onOpenAI, isAdmin = true }) {
   const { theme: C, metier } = useTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const ref = useRef();
 
-  // Raccourcis clavier globaux
   useEffect(() => {
     function onKey(e) {
       if ((e.ctrlKey && e.key==='k') || (e.key==='/' && !['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))) {
@@ -19,14 +18,16 @@ export default function GlobalSearch({ onNavigate, onOpenAI }) {
       }
       if (e.key==='Escape') { setOpen(false); setQuery(''); return; }
       if (e.ctrlKey && !e.shiftKey && !e.altKey) {
-        const MAP = {d:'dashboard',p:'products',v:'sales',c:'clients',f:'suppliers',e:'employees',t:'treasury',r:'reports',s:'settings'};
+        const ALL_MAP = { d:'dashboard', p:'products', v:'sales', c:'clients', f:'suppliers', e:'employees', t:'treasury', r:'reports', s:'settings' };
+        const EMP_MAP = { d:'dashboard', p:'products', v:'sales', c:'clients' };
+        const MAP = isAdmin ? ALL_MAP : EMP_MAP;
         if (MAP[e.key]) { e.preventDefault(); onNavigate(MAP[e.key]); return; }
-        if (e.key==='i') { e.preventDefault(); if(onOpenAI) onOpenAI(); return; }
+        if (e.key==='i' && isAdmin) { e.preventDefault(); if(onOpenAI) onOpenAI(); return; }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onNavigate, onOpenAI]);
+  }, [onNavigate, onOpenAI, isAdmin]);
 
   useEffect(() => {
     const handleClick = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -41,7 +42,7 @@ export default function GlobalSearch({ onNavigate, onOpenAI }) {
     const [products, clients, sales] = await Promise.all([
       db.products.toArray(),
       db.clients.toArray(),
-      db.sales.orderBy('createdAt').reverse().limit(100).toArray(),
+      isAdmin ? db.sales.orderBy('createdAt').reverse().limit(100).toArray() : Promise.resolve([]),
     ]);
     const S = q.toLowerCase();
     const res = [];
@@ -51,9 +52,11 @@ export default function GlobalSearch({ onNavigate, onOpenAI }) {
     clients.filter(c => c.name?.toLowerCase().includes(S)||c.phone?.includes(S)).slice(0,3).forEach(c =>
       res.push({ type:'client', icon: metier.navIcons?.clients||'👥', color:C.blue, title:c.name, sub:`📞 ${c.phone||'—'}`, page:'clients' })
     );
-    sales.filter(s => s.clientName?.toLowerCase().includes(S)||String(s.id).includes(S)).slice(0,3).forEach(s =>
-      res.push({ type:'vente', icon: metier.navIcons?.sales||'🧾', color:C.green, title:`Vente VP-${String(s.id).padStart(4,'0')}`, sub:`${s.clientName} · ${fmt(s.total)}`, page:'sales' })
-    );
+    if (isAdmin) {
+      sales.filter(s => s.clientName?.toLowerCase().includes(S)||String(s.id).includes(S)).slice(0,3).forEach(s =>
+        res.push({ type:'vente', icon: metier.navIcons?.sales||'🧾', color:C.green, title:`Vente VP-${String(s.id).padStart(4,'0')}`, sub:`${s.clientName} · ${fmt(s.total)}`, page:'sales' })
+      );
+    }
     setResults(res);
   }
 
@@ -66,8 +69,8 @@ export default function GlobalSearch({ onNavigate, onOpenAI }) {
         <input
           value={query} onChange={e=>search(e.target.value)}
           onFocus={()=>query.length>=2&&setOpen(true)}
-          placeholder="Recherche... (Ctrl+K)"
-          style={{ width:'100%', background:C.bg, border:`1px solid ${open?C.accent:C.border}`,
+          placeholder={`Recherche... (Ctrl+K)`}
+          style={{ width:'100%', background:C.isLight?'#fff':C.bg, border:`1px solid ${open?C.accent:C.border}`,
             borderRadius:10, padding:'8px 30px 8px 30px', color:C.text, fontSize:12,
             outline:'none', fontFamily:C.fontBody, transition:'border-color .2s', boxSizing:'border-box' }}/>
         {query && (

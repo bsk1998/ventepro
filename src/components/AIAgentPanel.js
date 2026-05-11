@@ -1,6 +1,9 @@
 import { useTheme } from '../ThemeContext';
 import { useState, useRef, useEffect } from 'react';
 import { db, fmt, nowISO } from '../db';
+import stockAgent from './StockAgent';
+import financeAgent from './FinanceAgent';
+import clientAgent from './ClientAgent';
 
 // ════════════════════════════════════════════════════════════════════════════
 // AGENTS V2 — Prompts enrichis, suggestions contextuelles
@@ -30,11 +33,11 @@ EXPERTISE COMPLÈTE:
 
 Réponds toujours en français professionnel adapté au contexte algérien.`,
     suggestions: [
-      '🔴 Ruptures et stock critique',
-      '📦 Que commander cette semaine ?',
-      '💰 Valeur totale du stock',
-      '📊 Analyse rotation produits',
-      '⚠️ Produits périmés bientôt',
+      'Que commander cette semaine ?',
+      'Produits a faible marge',
+      'Ruptures stock',
+      'Aide commandes stock',
+      'Valeur totale du stock',
     ],
   },
   {
@@ -59,11 +62,11 @@ EXPERTISE COMPLÈTE:
 
 Sois commercial, dynamique, orienté résultats.`,
     suggestions: [
-      '📈 CA aujourd\'hui et ce mois',
-      '🏆 Top 10 produits du mois',
-      '👥 Meilleurs clients',
-      '💡 Comment booster les ventes ?',
-      '⏰ Heures de pointe',
+      'Details derniere vente',
+      'Top produits du mois',
+      'Ventes par vendeur',
+      'Impayes clients',
+      'Aide commandes vente',
     ],
   },
   {
@@ -87,11 +90,11 @@ EXPERTISE COMPLÈTE:
 
 Sois proactif, bienveillant mais ferme sur le recouvrement.`,
     suggestions: [
-      '💳 Liste des débiteurs',
-      '🔴 Créances urgentes (>30 jours)',
-      '⭐ Clients VIP à chouchouter',
-      '📞 Plan de relance cette semaine',
-      '📊 Segmentation complète clients',
+      'Liste des debiteurs',
+      'Clients VIP',
+      'Fiche client Rachid',
+      'Aide commandes clients',
+      'Plan de relance cette semaine',
     ],
   },
   {
@@ -117,11 +120,11 @@ EXPERTISE COMPLÈTE:
 
 Sois rigoureux, transparent, respectueux des valeurs islamiques.`,
     suggestions: [
-      '📊 Bilan complet du mois',
-      '🕌 Calculer la Zakat',
-      '📈 Analyse des marges par catégorie',
-      '💸 Rapport dépenses détaillé',
-      '🔮 Projection chiffre d\'affaires',
+      'Bilan du mois',
+      'Calculer la Zakat',
+      'Depenses par categorie',
+      'Marge et benefice',
+      'Aide commandes finance',
     ],
   },
   {
@@ -316,6 +319,372 @@ function localFallback(agentId, data) {
 // MARKDOWN RENDERER
 // ════════════════════════════════════════════════════════════════════════════
 
+function normalizeText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s.-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractAmount(text) {
+  const matches = [...normalizeText(text).matchAll(/(\d+(?:[ .]\d{3})*(?:[,.]\d+)?)/g)];
+  const match = matches[matches.length - 1];
+  return match ? Number(match[1].replace(/\s|\./g, '').replace(',', '.')) || 0 : 0;
+}
+
+function extractPhone(text) {
+  return String(text || '').match(/(?:\+?213|0)(?:[\s.-]?\d){8,9}/)?.[0]?.trim() || '';
+}
+
+function extractNameAfter(text, keywords) {
+  const raw = String(text || '').trim();
+  const normalized = normalizeText(raw);
+  for (const key of keywords) {
+    const idx = normalized.indexOf(key);
+    if (idx >= 0) {
+      const originalTail = raw.slice(Math.min(raw.length, idx + key.length)).replace(/(?:tel|telephone|phone|montant|prix|a|de)\s+.*$/i, '').trim();
+      if (originalTail) return originalTail;
+    }
+  }
+  return '';
+}
+
+function extractQty(text) {
+  const normalized = normalizeText(text);
+  const match = normalized.match(/(?:ajoute|vends|vend|mets|retire|enleve)\s+(\d+(?:[,.]\d+)?)(?:\s|x|fois|unites?|pieces?|pce|l|kg)/);
+  return match ? Number(match[1].replace(',', '.')) || 1 : 1;
+}
+
+function findByName(list, text, fields = ['name']) {
+  const q = normalizeText(text);
+  return [...(list || [])]
+    .map(item => {
+      const haystack = fields.map(f => normalizeText(item[f])).join(' ');
+      const name = normalizeText(item.name || item.clientName || item.label);
+      const tokenScore = name.split(' ').filter(w => w.length > 2 && q.includes(w)).length * 10;
+      const score = haystack && q.includes(haystack) ? 1000 + haystack.length : tokenScore + name.length / 100;
+      return { item, score };
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.item || null;
+}
+
+function agentHelp(agentId, hasModuleActions) {
+  const common = [
+    '## Commandes gratuites disponibles',
+    'Je fonctionne en local avec vos donnees Dexie. Pas besoin de payer une API pour ces actions.',
+  ];
+  if (agentId === 'sales') {
+    return [...common,
+      '- `ajoute 2 huile 5w30`',
+      '- `applique une remise de 500`',
+      hasModuleActions ? '- `valide la vente`' : '- Ouvrez-moi depuis le module Vente pour modifier le panier actif',
+      '- `details vente VP-12`',
+      '- `qui a fait la derniere vente ?`',
+      '- `top produits du mois`',
+      '- `impayes clients`',
+    ].join('\n');
+  }
+  if (agentId === 'stock') {
+    return [...common,
+      '- `ruptures stock`',
+      '- `que commander cette semaine ?`',
+      '- `mets le prix de huile 5w30 a 1900`',
+      '- `mets le stock de bougie a 40`',
+      '- `augmente stock filtre a air de 10`',
+      '- `produits a faible marge`',
+    ].join('\n');
+  }
+  if (agentId === 'clients') {
+    return [...common,
+      '- `liste des debiteurs`',
+      '- `fiche client Rachid`',
+      '- `enregistre versement 5000 pour Rachid`',
+      '- `cree client Mohamed tel 0555123456`',
+      '- `clients VIP`',
+    ].join('\n');
+  }
+  if (agentId === 'finance') {
+    return [...common,
+      '- `bilan du mois`',
+      '- `zakat`',
+      '- `ajoute depense loyer 25000`',
+      '- `depenses par categorie`',
+      '- `marge et benefice`',
+    ].join('\n');
+  }
+  return [...common, '- `resume aujourd hui`', '- `alertes importantes`'].join('\n');
+}
+
+function topProductsReport(data, period = 'month') {
+  const sales = data.sales || [];
+  const saleItems = data.saleItems || [];
+  const now = new Date();
+  const key = period === 'today' ? now.toISOString().slice(0, 10) : now.toISOString().slice(0, 7);
+  const saleIds = new Set(sales.filter(s => s.createdAt?.startsWith(key)).map(s => s.id));
+  const rows = new Map();
+  for (const item of saleItems) {
+    if (!saleIds.has(item.saleId)) continue;
+    const current = rows.get(item.productName) || { qty: 0, ca: 0 };
+    current.qty += Number(item.qty || 0);
+    current.ca += Number(item.qty || 0) * Number(item.unitPrice || 0);
+    rows.set(item.productName, current);
+  }
+  const top = [...rows.entries()].sort((a, b) => b[1].ca - a[1].ca).slice(0, 10);
+  if (!top.length) return `## Top produits\nAucune vente sur la periode ${period === 'today' ? "d'aujourd'hui" : 'du mois'}.`;
+  return ['## Top produits', ...top.map(([name, row], index) => `${index + 1}. **${name}** - ${row.qty} vendu(s), ${fmt(row.ca)}`)].join('\n');
+}
+
+function salesBySellerReport(data) {
+  const rows = new Map();
+  for (const sale of data.sales || []) {
+    const name = sale.employeeName || 'Non renseigne';
+    const current = rows.get(name) || { count: 0, total: 0, paid: 0 };
+    current.count += 1;
+    current.total += Number(sale.total || 0);
+    current.paid += Number(sale.paid || 0);
+    rows.set(name, current);
+  }
+  const sorted = [...rows.entries()].sort((a, b) => b[1].total - a[1].total);
+  if (!sorted.length) return '## Ventes par vendeur\nAucune vente enregistree.';
+  return ['## Ventes par vendeur', ...sorted.map(([name, row], index) => `${index + 1}. **${name}** - ${row.count} vente(s), CA ${fmt(row.total)}, verse ${fmt(row.paid)}`)].join('\n');
+}
+
+function debtorsReport(data) {
+  const clients = data.clients || [];
+  const debtors = clients
+    .filter(c => Number(c.dette || c.totalDue || 0) > 0)
+    .sort((a, b) => Number(b.dette || b.totalDue || 0) - Number(a.dette || a.totalDue || 0))
+    .slice(0, 12);
+  if (!debtors.length) return '## Credits clients\nAucun debiteur.';
+  const total = debtors.reduce((sum, c) => sum + Number(c.dette || c.totalDue || 0), 0);
+  return ['## Debiteurs prioritaires', `Total affiche: **${fmt(total)}**`, ...debtors.map((c, i) => `${i + 1}. **${c.name}** - ${fmt(c.dette || c.totalDue)} ${c.phone ? `(${c.phone})` : ''}`)].join('\n');
+}
+
+function clientDetailsReport(client, data) {
+  if (!client) return 'Client introuvable.';
+  const sales = (data.sales || []).filter(s => s.clientId === client.id);
+  const total = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const paid = sales.reduce((sum, s) => sum + Number(s.paid || 0), 0);
+  const last = [...sales].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0];
+  return [
+    `## Fiche client - ${client.name}`,
+    `Telephone: **${client.phone || 'Non renseigne'}**`,
+    `Achats: **${sales.length}**`,
+    `Total achete: **${fmt(total)}**`,
+    `Verse: **${fmt(paid)}**`,
+    `Reste: **${fmt(total - paid)}**`,
+    `Derniere visite: **${last?.createdAt ? new Date(last.createdAt).toLocaleDateString('fr-DZ') : 'Aucune'}**`,
+  ].join('\n');
+}
+
+function formatSaleDetails(sale, items = [], payments = []) {
+  if (!sale) return 'Aucune vente trouvee.';
+  const total = Number(sale.total || 0);
+  const paid = Number(sale.paid || 0);
+  const due = Math.max(0, total - paid);
+  const date = sale.createdAt ? new Date(sale.createdAt).toLocaleString('fr-DZ') : 'Date inconnue';
+  const lines = [
+    `## Vente VP-${String(sale.id).padStart(4, '0')}`,
+    `Date: **${date}**`,
+    `Client: **${sale.clientName || 'Passage'}**`,
+    `Vendeur: **${sale.employeeName || 'Non renseigne'}**`,
+    `Total: **${fmt(total)}**`,
+    `Verse: **${fmt(paid)}**`,
+    `Reste: **${fmt(due)}**`,
+    `Mode: **${sale.payMode || 'Non renseigne'}** | Statut: **${sale.status || 'Non renseigne'}**`,
+  ];
+  if (items.length) {
+    lines.push('\n## Articles');
+    items.forEach(item => lines.push(`- ${item.productName}: ${item.qty} x ${fmt(item.unitPrice)}`));
+  }
+  if (payments.length) {
+    lines.push('\n## Versements');
+    payments.forEach(payment => lines.push(`- ${fmt(payment.amount)} le ${new Date(payment.createdAt).toLocaleDateString('fr-DZ')}`));
+  }
+  return lines.join('\n');
+}
+
+async function answerSaleQuestion(question, data) {
+  const q = normalizeText(question);
+  const sales = data.sales || [];
+  let sale = null;
+  const idMatch = q.match(/(?:vp[-\s]*)?(\d{1,6})/);
+
+  if (idMatch && /(vente|ticket|facture|vp)/.test(q)) {
+    sale = await db.sales.get(Number(idMatch[1])).catch(() => null);
+  }
+  if (!sale && /(derniere|recente|dernier|last)/.test(q)) {
+    sale = sales[0] || await db.sales.orderBy('createdAt').reverse().first();
+  }
+  if (!sale) {
+    const client = findByName(data.clients, q, ['name', 'phone']);
+    if (client) {
+      const rows = await db.sales.where('clientId').equals(client.id).toArray().catch(() => []);
+      sale = rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0] || null;
+    }
+  }
+
+  if (sale) {
+    const [items, payments] = await Promise.all([
+      db.saleItems.where('saleId').equals(sale.id).toArray(),
+      db.payments.where('saleId').equals(sale.id).toArray().catch(() => []),
+    ]);
+    return formatSaleDetails(sale, items, payments);
+  }
+
+  if (/(aujourd|today)/.test(q)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const todaySales = sales.filter(s => s.createdAt?.startsWith(today));
+    const total = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+    const paid = todaySales.reduce((sum, s) => sum + Number(s.paid || 0), 0);
+    return `## Ventes du jour\n${todaySales.length} vente(s)\nCA: **${fmt(total)}**\nVerse: **${fmt(paid)}**\nCredit restant: **${fmt(total - paid)}**`;
+  }
+
+  return null;
+}
+
+async function executeLocalAgentCommand({ agentId, question, data, userRole, moduleActions }) {
+  const q = normalizeText(question);
+  const canWrite = userRole === 'admin' || agentId === 'sales';
+
+  if (/^(aide|help|commandes|que peux tu faire|quoi faire)/.test(q)) {
+    return { handled: true, reply: agentHelp(agentId, !!moduleActions) };
+  }
+
+  if (agentId === 'sales') {
+    if (/(top|meilleur|classement).*(produit|article)|produit.*(vendu|top|meilleur)/.test(q)) {
+      return { handled: true, reply: topProductsReport(data, /(aujourd|jour)/.test(q) ? 'today' : 'month') };
+    }
+    if (/(vendeur|employe|ca par|qui vend|performance)/.test(q)) {
+      return { handled: true, reply: salesBySellerReport(data) };
+    }
+    if (/(impaye|credit|debiteur|reste a payer)/.test(q)) {
+      return { handled: true, reply: debtorsReport(data) };
+    }
+    if (/(ajoute|mets|vend|vends)/.test(q)) {
+      const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
+      if (!product) return { handled: true, reply: "## Agent Ventes\nJe n'ai pas trouve le produit dans le stock. Donnez le nom ou la reference." };
+      const qty = extractQty(question);
+      if (moduleActions?.addProductToCart) {
+        await moduleActions.addProductToCart(product, qty);
+        return { handled: true, reply: `## Action executee\nJ'ai ajoute **${qty} x ${product.name}** au panier.\nStock disponible: **${product.stock} ${product.unit || 'pce'}**.` };
+      }
+      return { handled: true, reply: "## Action impossible ici\nOuvrez l'agent depuis le module Vente pour modifier le panier actif." };
+    }
+    if (/(remise|reduction|rabais)/.test(q)) {
+      const amount = extractAmount(question);
+      if (!amount) return { handled: true, reply: '## Agent Ventes\nIndiquez le montant de remise a appliquer, par exemple: `applique une remise de 500`.' };
+      if (moduleActions?.applyDiscount) {
+        await moduleActions.applyDiscount(amount);
+        return { handled: true, reply: `## Action executee\nRemise appliquee: **${fmt(amount)}**.` };
+      }
+      return { handled: true, reply: "## Action impossible ici\nLa remise se modifie depuis le module Vente ouvert." };
+    }
+    if (/(valide|encaisse|finalise|termine)/.test(q)) {
+      if (moduleActions?.openValidation) {
+        await moduleActions.openValidation();
+        return { handled: true, reply: "## Action executee\nJ'ai ouvert la validation de vente. Verifiez le paiement avant de confirmer." };
+      }
+      return { handled: true, reply: "## Action impossible ici\nJe peux ouvrir la validation seulement depuis le module Vente." };
+    }
+    const saleAnswer = await answerSaleQuestion(question, data);
+    if (saleAnswer) return { handled: true, reply: saleAnswer };
+  }
+
+  if (agentId === 'stock') {
+    if (/(stock).*(met|change|modifier|fixe|ajuste)|(?:met|change|modifier|fixe|ajuste).*(stock)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut modifier le stock." };
+      const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
+      const amount = extractAmount(question);
+      if (!product && !amount) return { handled: true, reply: '## Agent Stock\nPrecisez le produit et la quantite. Exemple: `mets le stock de Bougie NGK a 40`.' };
+      if (!product) return { handled: true, reply: "## Agent Stock\nProduit introuvable. Donnez le nom ou la reference." };
+      await db.products.update(product.id, { stock: amount, updatedAt: nowISO(), updatedByAgent: 'stock' });
+      return { handled: true, reply: `## Action executee\nStock de **${product.name}** mis a **${amount} ${product.unit || 'pce'}**.` };
+    }
+    if (/(augmente|ajoute|recois|reception).*(stock)|stock.*(augmente|ajoute|recois|reception)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut modifier le stock." };
+      const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
+      const amount = extractAmount(question);
+      if (!product || !amount) return { handled: true, reply: '## Agent Stock\nExemple: `augmente stock Filtre a Air de 10`.' };
+      const next = Number(product.stock || 0) + amount;
+      await db.products.update(product.id, { stock: next, updatedAt: nowISO(), updatedByAgent: 'stock' });
+      return { handled: true, reply: `## Action executee\nStock de **${product.name}** augmente de **${amount}**. Nouveau stock: **${next} ${product.unit || 'pce'}**.` };
+    }
+    if (/(prix|tarif).*(met|change|modifier|fixe|applique)|(?:met|change|modifier|fixe).*(prix|tarif)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut modifier les prix." };
+      const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
+      const amount = extractAmount(question);
+      if (!product || !amount) return { handled: true, reply: '## Agent Stock\nPrecisez le produit et le nouveau prix. Exemple: `mets le prix de Huile 5W30 a 1900`.' };
+      await stockAgent.updateProductPrice(product.id, amount);
+      return { handled: true, reply: `## Action executee\nPrix de **${product.name}** mis a jour: **${fmt(amount)}**.` };
+    }
+    if (/(rupture|stock bas|commander|commande|reappro)/.test(q)) {
+      return { handled: true, reply: await stockAgent.getTextReport() };
+    }
+    if (/(faible marge|marge faible|prix faible)/.test(q)) {
+      const rows = (data.products || [])
+        .map(p => ({ p, margin: Number(p.buyPrice || 0) > 0 ? ((Number(p.sellPrice || 0) - Number(p.buyPrice || 0)) / Number(p.buyPrice || 0)) * 100 : null }))
+        .filter(x => x.margin !== null)
+        .sort((a, b) => a.margin - b.margin)
+        .slice(0, 10);
+      return { handled: true, reply: ['## Produits a faible marge', ...rows.map(({ p, margin }) => `- **${p.name}** - ${margin.toFixed(1)}% (${fmt(p.buyPrice)} -> ${fmt(p.sellPrice)})`)].join('\n') };
+    }
+  }
+
+  if (agentId === 'clients') {
+    if (/(cree|ajoute|nouveau).*(client)|client.*(cree|ajoute|nouveau)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut creer un client." };
+      const phone = extractPhone(question);
+      const name = extractNameAfter(question, ['client', 'nouveau client', 'ajoute client', 'cree client']).replace(phone, '').trim();
+      if (!name) return { handled: true, reply: '## Agent Clients\nDonnez le nom du client. Exemple: `cree client Mohamed tel 0555123456`.' };
+      const id = await db.clients.add({ name, phone, address: '', notes: 'Cree par Agent Clients', createdAt: nowISO() });
+      return { handled: true, reply: `## Action executee\nClient **${name}** cree${phone ? ` avec telephone **${phone}**` : ''}. ID: ${id}.` };
+    }
+    if (/(versement|paiement|paye|regle|rembourse)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut enregistrer un versement client." };
+      const client = findByName(data.clients, q, ['name', 'phone']);
+      const amount = extractAmount(question);
+      if (!client || !amount) return { handled: true, reply: '## Agent Clients\nPrecisez le client et le montant. Exemple: `enregistre versement 5000 pour Rachid`.' };
+      await clientAgent.recordPayment(client.id, amount);
+      return { handled: true, reply: `## Action executee\nVersement de **${fmt(amount)}** enregistre pour **${client.name}**.` };
+    }
+    if (/(debiteur|dette|credit|relance|client)/.test(q)) {
+      const client = findByName(data.clients, q, ['name', 'phone']);
+      if (client && !/(debiteur|liste|tous)/.test(q)) return { handled: true, reply: clientDetailsReport(client, data) };
+      return { handled: true, reply: await clientAgent.getTextReport() };
+    }
+    if (/(vip|meilleur client|top client)/.test(q)) {
+      const rows = [...(data.clients || [])].sort((a, b) => Number(b.totalAchete || 0) - Number(a.totalAchete || 0)).slice(0, 10);
+      return { handled: true, reply: ['## Meilleurs clients', ...rows.map((c, i) => `${i + 1}. **${c.name}** - ${fmt(c.totalAchete || 0)} (${c.nombreAchats || 0} achats)`)].join('\n') };
+    }
+  }
+
+  if (agentId === 'finance') {
+    if (/(ajoute|enregistre|cree).*(depense|charge)|(?:depense|charge).*(ajoute|enregistre|cree)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut ajouter une depense." };
+      const amount = extractAmount(question);
+      const label = question.replace(/ajoute|enregistre|cree|une|un|depense|charge|de|da|\d+/gi, ' ').replace(/\s+/g, ' ').trim() || 'Depense saisie par IA';
+      if (!amount) return { handled: true, reply: '## Agent Finance\nIndiquez le montant. Exemple: `ajoute depense loyer 25000`.' };
+      await financeAgent.addExpense({ label, amount, category: 'Divers' });
+      return { handled: true, reply: `## Action executee\nDepense **${label}** ajoutee pour **${fmt(amount)}**.` };
+    }
+    if (/(bilan|zakat|tresorerie|marge|benefice|depense)/.test(q)) {
+      if (/(categorie|par categorie)/.test(q)) {
+        const report = await financeAgent.generateMonthlyReport(true);
+        const rows = Object.entries(report.expByCategory || {}).sort((a, b) => b[1] - a[1]);
+        return { handled: true, reply: ['## Depenses par categorie', ...rows.map(([cat, total]) => `- **${cat}**: ${fmt(total)}`)].join('\n') || 'Aucune depense.' };
+      }
+      return { handled: true, reply: await financeAgent.getTextReport(true) };
+    }
+  }
+
+  return { handled: false };
+}
+
 function parseInline(text) {
   if (!text) return null;
   const bold = text.split(/(\*\*[^*]+\*\*)/g);
@@ -443,7 +812,7 @@ function TypingDots({ color, icon }) {
 // COMPOSANT PRINCIPAL
 // ════════════════════════════════════════════════════════════════════════════
 
-export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgentId = null }) {
+export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgentId = null, moduleActions = null }) {
   const { theme: C } = useTheme();
   const isLight = C.isLight;
   const agents = userRole === 'admin' ? AGENTS_ADMIN : AGENTS_EMPLOYEE;
@@ -516,10 +885,24 @@ export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgent
     let reply = '';
 
     try {
+      const localAction = await executeLocalAgentCommand({
+        agentId: activeAgent.id,
+        question: q,
+        data,
+        userRole,
+        moduleActions,
+      });
+
+      if (localAction.handled) {
+        reply = localAction.reply;
+        const refreshed = await loadAllData();
+        setAllData(refreshed);
+        setOffline(false);
+      } else {
       const key = localStorage.getItem('groq_key') || '';
       if (!key) {
-        reply = `## Clé API Groq manquante\n\nPour activer l'IA complète :\n\n1. Allez sur **console.groq.com**\n2. Créez un compte gratuit\n3. Copiez votre clé API\n4. Dans VenteX AI : **Paramètres → Clé Groq**\n\n---\n\n_Voici une analyse locale de vos données :_\n\n${localFallback(activeAgent.id, data)}`;
-        setOffline(true);
+        reply = `## IA locale gratuite\n\nJe n'utilise aucune API payante pour cette reponse. Les commandes d'action et les analyses metier fonctionnent directement sur vos donnees locales.\n\n${localFallback(activeAgent.id, data)}\n\n---\nTapez **aide** pour voir les commandes que je peux executer dans ce module.`;
+        setOffline(false);
       } else {
         const ctx = buildContext(activeAgent.id, data, userRole);
         const ctrl = new AbortController();
@@ -540,6 +923,7 @@ export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgent
         if (!res.ok) throw new Error(d.error?.message || `Erreur ${res.status}`);
         reply = d.choices?.[0]?.message?.content || 'Aucune réponse.';
         setOffline(false);
+      }
       }
     } catch (err) {
       setOffline(true);
@@ -626,7 +1010,7 @@ export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgent
                 boxShadow: offline ? 'none' : '0 0 7px #10B981',
               }} />
               <span style={{ fontSize: 10, fontWeight: 700, color: offline ? '#F59E0B' : '#10B981' }}>
-                {offline ? 'Mode local · sans IA' : 'IA active · Groq'}
+                {offline ? 'Mode local' : (localStorage.getItem('groq_key') ? 'IA active · Groq' : 'IA locale gratuite')}
               </span>
               {(loading || streaming) && <div style={{ marginLeft: 'auto', width: 14, height: 14, border: `2px solid ${activeAgent.color}`, borderTop: `2px solid transparent`, borderRadius: '50%', animation: 'typeDot 0.7s linear infinite' }} />}
             </div>

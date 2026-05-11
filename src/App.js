@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import Login from './pages/Login';
+import Activation from './pages/Activation';
 import AIAgentPanel from './components/AIAgentPanel';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
@@ -17,6 +18,7 @@ import { ToastContainer }  from './components/Feedback';
 import GlobalSearch         from './components/GlobalSearch';
 import QuickAIButton        from './components/QuickAIButton';
 import UpdateChecker        from './components/UpdateChecker';
+import { checkLicense } from './license';
 
 function GlobalStyles() {
   return <style>{ANIMATIONS_CSS}</style>;
@@ -67,7 +69,7 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
 
       {/* FIX AUDIT: GlobalSearch maintenant visible dans le header */}
       <div style={{ flex: 1, maxWidth: 340, margin: '0 12px' }}>
-        <GlobalSearch onNavigate={onNavigate} onOpenAI={onOpenAI} />
+        <GlobalSearch onNavigate={onNavigate} onOpenAI={onOpenAI} isAdmin={isAdmin} />
       </div>
 
       {/* Alerte stock */}
@@ -121,10 +123,13 @@ function AppInner() {
   const [user,     setUser]     = useState(null);
   const [page,     setPage]     = useState('dashboard');
   const [showAI,   setShowAI]   = useState(false);
+  const [aiDefaultAgent, setAiDefaultAgent] = useState(null);
   const [liveData, setLiveData] = useState({});
   const [alerts,   setAlerts]   = useState(0);
   const [shopName, setShopName] = useState('VenteX AI');
   const [ready,    setReady]    = useState(false);
+  const [licenseReady, setLicenseReady] = useState(false);
+  const [licenseValid, setLicenseValid] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -132,6 +137,19 @@ function AppInner() {
       const sn = await db.settings.get('shop_name').catch(()=>null);
       if (sn?.value) setShopName(sn.value);
       setReady(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (!window.electronAPI?.isElectron) {
+        setLicenseValid(true);
+        setLicenseReady(true);
+        return;
+      }
+      const result = await checkLicense().catch(() => ({ valid: false }));
+      setLicenseValid(!!result.valid);
+      setLicenseReady(true);
     })();
   }, []);
 
@@ -150,8 +168,17 @@ function AppInner() {
   function handleLogin(u)  { setUser(u); setPage('dashboard'); }
   function handleLogout()  { setUser(null); setPage('dashboard'); setShowAI(false); }
   function navigate(p)     { setPage(p); window.scrollTo(0,0); }
+  function openAI(agentId = null) {
+    setAiDefaultAgent(agentId);
+    loadLiveData();
+    setShowAI(true);
+  }
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'gérant';
+  const isAdmin = ['admin', 'gerant', 'gérant', 'gÃ©rant'].includes(user?.role);
+  const employeePages = ['dashboard', 'products', 'sales', 'clients'];
+  const adminPages = ['dashboard', 'products', 'sales', 'clients', 'suppliers', 'employees', 'treasury', 'reports', 'quotes', 'settings'];
+  const allowedPages = isAdmin ? adminPages : employeePages;
+  const safeNavigate = (p) => navigate(allowedPages.includes(p) ? p : 'dashboard');
 
   const PAGE_NAMES = {
     products:'Produits & Stock', sales:'Ventes & Caisse', clients:'Clients',
@@ -159,7 +186,17 @@ function AppInner() {
     reports:'Rapports & Statistiques', quotes:'Devis & Factures', settings:'Paramètres',
   };
 
-  if (!ready) return (
+  const PAGE_AGENTS = {
+    products: 'stock',
+    sales: 'sales',
+    clients: 'clients',
+    treasury: 'finance',
+    reports: 'finance',
+    employees: 'hr',
+    dashboard: 'assistant',
+  };
+
+  if (!ready || !licenseReady) return (
     <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
       background: DS.colors.bg, flexDirection:'column', gap:14, fontFamily: DS.typography.body.fontFamily }}>
       <div className="vx-popup" style={{ fontSize: 48 }}>⚡</div>
@@ -168,9 +205,11 @@ function AppInner() {
     </div>
   );
 
+  if (!licenseValid) return <Activation onActivated={() => setLicenseValid(true)} />;
+
   if (!user) return <Login onLogin={handleLogin}/>;
 
-  const currentPage = (!isAdmin && !['dashboard','products','sales','clients'].includes(page)) ? 'dashboard' : page;
+  const currentPage = allowedPages.includes(page) ? page : 'dashboard';
   const onDashboard = currentPage === 'dashboard';
 
   return (
@@ -190,7 +229,7 @@ function AppInner() {
 
       {showAI && (
         <AIAgentPanel onClose={()=>setShowAI(false)} liveData={liveData}
-          userRole={isAdmin?'admin':'employee'}/>
+          userRole={isAdmin?'admin':'employee'} defaultAgentId={aiDefaultAgent}/>
       )}
 
       {!onDashboard && (
@@ -199,11 +238,11 @@ function AppInner() {
           shopName={shopName}
           pageName={PAGE_NAMES[currentPage]||currentPage}
           alerts={alerts}
-          onOpenAI={()=>{ loadLiveData(); setShowAI(true); }}
+          onOpenAI={() => openAI(PAGE_AGENTS[currentPage] || null)}
           isAdmin={isAdmin}
           user={user}
           onLogout={handleLogout}
-          onNavigate={navigate}
+          onNavigate={safeNavigate}
           currentPage={currentPage}
         />
       )}
@@ -214,9 +253,9 @@ function AppInner() {
         overflow: onDashboard ? 'hidden' : 'auto',
         padding: 0,
       }}>
-        {currentPage === 'dashboard' && <Dashboard onNavigate={navigate} user={user} isAdmin={isAdmin} onOpenAI={()=>{ loadLiveData(); setShowAI(true); }}/>}
+        {currentPage === 'dashboard' && <Dashboard onNavigate={safeNavigate} user={user} isAdmin={isAdmin} onOpenAI={() => openAI('assistant')}/>}
         {currentPage === 'products'  && <Products/>}
-        {currentPage === 'sales'     && <Sales/>}
+        {currentPage === 'sales'     && <Sales user={user}/>}
         {currentPage === 'clients'   && <Clients/>}
         {currentPage === 'suppliers' && <Suppliers/>}
         {currentPage === 'employees' && <Employees/>}
@@ -230,7 +269,7 @@ function AppInner() {
       {!onDashboard && (
         <QuickAIButton
           currentPage={currentPage}
-          onOpenAI={()=>{ loadLiveData(); setShowAI(true); }}
+          onOpenAI={openAI}
         />
       )}
     </div>

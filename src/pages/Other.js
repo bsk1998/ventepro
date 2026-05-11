@@ -2,7 +2,7 @@ import { ThemeSwitcher } from '../ThemeContext';
 import { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import { Card, Btn, Badge, Loader, PageHeader, TableWrap, TR, TD, MiniChart, fmt } from '../components/ui';
-import { db, getDashboardStats, exportBackup, importBackup, nowISO } from '../db';
+import { db, getDashboardStats, exportBackup, importBackup, nowISO, invalidateCache } from '../db';
 import { printQuote as printQuoteDoc, PrintSettingsPanel } from '../components/Ticket';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -185,6 +185,15 @@ export function Quotes() {
   async function convertToSale(quote){
     if(!window.confirm('Convertir ce devis en vente ?')) return;
     const items=await db.quoteItems.where('quoteId').equals(quote.id).toArray();
+    const missing = [];
+    for(const i of items){
+      const p=await db.products.get(i.productId);
+      if(!p || Number(p.stock||0)<Number(i.qty||0)) missing.push(`${i.productName} (${p?.stock||0}/${i.qty})`);
+    }
+    if(missing.length){
+      alert(`Stock insuffisant pour convertir ce devis:\n- ${missing.join('\n- ')}`);
+      return;
+    }
     const saleId=await db.sales.add({
       clientName:quote.clientName,clientId:quote.clientId,
       total:quote.total,paid:quote.total,status:'payé',
@@ -193,9 +202,10 @@ export function Quotes() {
     await db.saleItems.bulkAdd(items.map(i=>({...i,saleId})));
     for(const i of items){
       const p=await db.products.get(i.productId);
-      if(p) await db.products.update(i.productId,{stock:Math.max(0,p.stock-i.qty)});
+      if(p) await db.products.update(i.productId,{stock:Number(p.stock||0)-Number(i.qty||0)});
     }
     await db.quotes.update(quote.id,{status:'converti'});
+    invalidateCache();
     await load();alert('Devis converti en vente ✅');
   }
 
@@ -485,11 +495,11 @@ export function Settings() {
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:14}}>
               <div>
-                <label style={labelStyle}>Mot de passe Admin (actuel: <code>admin00</code>)</label>
+                <label style={labelStyle}>Mot de passe Admin</label>
                 <input type={showPwd?'text':'password'} value={adminPwd} onChange={e=>setAdminPwd(e.target.value)} placeholder="Nouveau mot de passe admin" style={inputStyle}/>
               </div>
               <div>
-                <label style={labelStyle}>Mot de passe Vendeur (actuel: <code>0000</code>)</label>
+                <label style={labelStyle}>Mot de passe Vendeur</label>
                 <input type={showPwd?'text':'password'} value={userPwd} onChange={e=>setUserPwd(e.target.value)} placeholder="Nouveau mot de passe vendeur" style={inputStyle}/>
               </div>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,color:C.sub}}>
@@ -575,7 +585,7 @@ export function Settings() {
             <Card>
               <div style={{fontWeight:800,fontSize:15,marginBottom:12,fontFamily:C.fontDisplay}}>ℹ️ À propos</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
-                {[['Version','VentePro v3.0'],['Stockage','IndexedDB (local)'],['Mode','100% Offline'],['Agents IA','6 spécialisés']].map(([k,v])=>(
+                {[['Version','VentePro v3.0'],['Stockage','IndexedDB (local)'],['Mode','Données locales'],['Agents IA','Optionnels via Groq']].map(([k,v])=>(
                   <div key={k} style={{background:C.bg,borderRadius:8,padding:'10px 12px'}}>
                     <div style={{color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:.6,marginBottom:3}}>{k}</div>
                     <div style={{fontSize:13,fontWeight:700,color:C.accent}}>{v}</div>

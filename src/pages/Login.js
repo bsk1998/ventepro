@@ -252,7 +252,7 @@ export default function Login({ onLogin }) {
           </button>
 
           <div style={{ textAlign: 'center', marginTop: 30, color: 'rgba(255,255,255,0.15)', fontSize: 10, letterSpacing: '1px' }}>
-            VENTEPRO v1.0 • 100% OFFLINE • DZ
+            VENTEPRO v1.0 • DONNÉES LOCALES • DZ
           </div>
         </div>
       </div>

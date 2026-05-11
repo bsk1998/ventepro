@@ -21,7 +21,7 @@ export default function QuickAIButton({ currentPage, onOpenAI }) {
   const col  = agent.color;
 
   return (
-    <button onClick={onOpenAI} title={`Ouvrir ${agent.label}`}
+    <button onClick={() => onOpenAI?.(agent.agentId)} title={`Ouvrir ${agent.label}`}
       style={{
         position:'fixed', bottom:28, right:28, zIndex:100,
         background:`linear-gradient(135deg,${col},${col}CC)`,

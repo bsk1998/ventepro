@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../ThemeContext';
 import { db, fmt, today, nowISO } from '../db';
 import CameraAI from '../components/CameraAI';
+import stockAgent from '../components/StockAgent';
+import AgentSuggestionPanel from '../components/AgentSuggestionPanel';
 
 // ─── Tokens locaux dérivés du thème dynamique ─────────────────────────────────
 // NE PAS éditer ces valeurs directement — elles proviennent de useTheme()
@@ -423,12 +425,15 @@ export default function Products() {
   const [advStock, setAdvStock] = useState('');
   const [advPrice, setAdvPrice] = useState('');
   const [showAdv,  setShowAdv]  = useState(false);
+  const [stockSuggestions, setStockSuggestions] = useState([]);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
-    setProducts(await db.products.toArray());
+    const rows = await db.products.toArray();
+    setProducts(rows);
+    stockAgent.getEmbeddedSuggestions(5).then(setStockSuggestions).catch(() => setStockSuggestions([]));
     setLoading(false);
   }
 
@@ -436,6 +441,15 @@ export default function Products() {
     const p = await db.products.get(id);
     if (p) await db.products.update(id, { stock: Math.max(0, p.stock + delta) });
     await load();
+  }
+
+  async function applyStockSuggestion(item) {
+    if (item.nextPrice && item.product?.id) {
+      await stockAgent.updateProductPrice(item.product.id, item.nextPrice);
+      await load();
+      return;
+    }
+    if (item.filter) setFilter(item.filter);
   }
 
   async function del(id) {
@@ -506,6 +520,16 @@ export default function Products() {
       </div>
 
       {/* ══ BARRE CONTRÔLES ══ */}
+      <AgentSuggestionPanel
+        title="Agent Stock integre"
+        subtitle="Ruptures, commandes et prix surveilles en direct"
+        compact
+        suggestions={stockSuggestions}
+        onApply={applyStockSuggestion}
+        onDismiss={() => setStockSuggestions([])}
+        style={{ margin: '0 14px 8px', flexShrink: 0 }}
+      />
+
       <G D={D} ac={D.blue} style={{ margin: '0 14px 6px', padding: '10px 14px', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 220, position: 'relative' }}>

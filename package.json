@@ -27,7 +27,8 @@
     },
     "files": [
       "build/**/*",
-      "public/electron.js"
+      "public/electron.js",
+      "public/preload.js"
     ],
     "win": {
       "target": "nsis",

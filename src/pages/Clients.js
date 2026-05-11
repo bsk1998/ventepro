@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import { Badge,Btn,Input,Textarea,Card,Modal,Confirm,Loader,PageHeader,fmt } from '../components/ui';
 import { db, nowISO } from '../db';
+import clientAgent from '../components/ClientAgent';
+import AgentSuggestionPanel from '../components/AgentSuggestionPanel';
 
 const CEMPTY={name:'',phone:'',address:'',notes:''};
 
@@ -18,6 +20,7 @@ export function Clients() {
   const [confirm,setConfirm]=useState(null);
   const [payModal,setPayModal]=useState(null);
   const [payAmount,setPayAmount]=useState('');
+  const [clientSuggestions,setClientSuggestions]=useState([]);
 
   useEffect(()=>{load();},[]);
 
@@ -30,7 +33,9 @@ export function Clients() {
       const paid=sales.reduce((s,v)=>s+Number(v.paid||0),0);
       return {...c,total,paid,totalDue:total-paid,salesCount:sales.length,sales};
     }));
-    setClients(enriched);setLoading(false);
+    setClients(enriched);
+    clientAgent.getEmbeddedSuggestions(5).then(setClientSuggestions).catch(()=>setClientSuggestions([]));
+    setLoading(false);
   }
 
   const openAdd=()=>{setForm(CEMPTY);setModal('add');};
@@ -72,6 +77,15 @@ export function Clients() {
       <PageHeader title="Clients & Crédits" sub={`${clients.length} clients · Crédit total: ${fmt(totalDue)}`}>
         <Btn onClick={openAdd}>+ Nouveau client</Btn>
       </PageHeader>
+
+      <AgentSuggestionPanel
+        title="Agent Clients integre"
+        subtitle="Recouvrement, fidelite et risques client"
+        suggestions={clientSuggestions}
+        onApply={(item)=>{ if(item.client?.id) setSel(item.client.id); }}
+        onDismiss={()=>setClientSuggestions([])}
+        style={{marginBottom:14}}
+      />
 
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Rechercher un client..."
         style={{width:'100%',background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
@@ -179,7 +193,15 @@ export function Clients() {
         </div>
       </Modal>}
 
-      {confirm&&<Confirm msg="Supprimer ce client ?" onOk={async()=>{await db.clients.delete(confirm);await load();setConfirm(null);}} onCancel={()=>setConfirm(null)}/>}
+      {confirm&&<Confirm msg="Supprimer ce client ?" onOk={async()=>{
+        const clientToDelete = clients.find(c => c.id === confirm);
+        if (clientToDelete?.salesCount > 0 || clientToDelete?.totalDue > 0) {
+          alert('Impossible de supprimer un client avec historique ou crédit. Modifiez sa fiche au lieu de la supprimer.');
+          setConfirm(null);
+          return;
+        }
+        await db.clients.delete(confirm);await load();setConfirm(null);
+      }} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 }

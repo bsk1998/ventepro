@@ -8,6 +8,7 @@ export default function UpdateChecker() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (!window.electronAPI?.isElectron) return;
     checkForUpdate();
   }, []);
 
