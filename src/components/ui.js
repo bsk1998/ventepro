@@ -13,7 +13,7 @@ export function Badge({color='blue',children,small}){
   };
   const[fg,bg]=MAP[color]||MAP.blue;
   return <span style={{background:bg,color:fg,border:`1px solid ${fg}35`,borderRadius:20,
-    padding:small?'2px 8px':'4px 12px',fontSize:small?10:11,fontWeight:700,
+    padding:small?'3px 9px':'5px 13px',fontSize:small?12:13,fontWeight:800,
     letterSpacing:.4,whiteSpace:'nowrap'}}>{children}</span>;
 }
 
@@ -23,18 +23,18 @@ export function Pill({label,active,onClick}){
     background:active?C.accent:C.isLight?'#fff':C.card,
     color:active?'#fff':C.sub,
     border:`1px solid ${active?C.accent:C.border}`,
-    borderRadius:20,padding:'5px 14px',fontSize:12,fontWeight:active?700:500,
+    borderRadius:20,padding:'7px 16px',fontSize:14,fontWeight:active?800:700,
     cursor:'pointer',transition:'all .15s'}}>{label}</button>;
 }
 
 export function Input({label,style:st,...props}){
   const {theme:C} = useTheme();
   return <div style={st}>
-    {label&&<div style={{color:C.sub,fontSize:10,fontWeight:700,marginBottom:5,
+    {label&&<div style={{color:C.sub,fontSize:12,fontWeight:800,marginBottom:6,
       letterSpacing:.6,textTransform:'uppercase'}}>{label}</div>}
     <input {...props} style={{width:'100%',background:C.isLight?'#fff':C.bg,
-      border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',
-      color:C.text,fontSize:13,outline:'none',transition:'border-color .15s',...props.style}}
+      border:`1px solid ${C.border}`,borderRadius:10,padding:'11px 13px',
+      color:C.text,fontSize:15,outline:'none',transition:'border-color .15s',...props.style}}
       onFocus={e=>{e.target.style.borderColor=C.accent}}
       onBlur={e=>{e.target.style.borderColor=C.border}}/>
   </div>;
@@ -43,11 +43,11 @@ export function Input({label,style:st,...props}){
 export function Textarea({label,style:st,...props}){
   const {theme:C} = useTheme();
   return <div style={st}>
-    {label&&<div style={{color:C.sub,fontSize:10,fontWeight:700,marginBottom:5,
+    {label&&<div style={{color:C.sub,fontSize:12,fontWeight:800,marginBottom:6,
       letterSpacing:.6,textTransform:'uppercase'}}>{label}</div>}
     <textarea {...props} style={{width:'100%',background:C.isLight?'#fff':C.bg,
-      border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',
-      color:C.text,fontSize:13,outline:'none',resize:'vertical',minHeight:72,...props.style}}
+      border:`1px solid ${C.border}`,borderRadius:10,padding:'11px 13px',
+      color:C.text,fontSize:15,outline:'none',resize:'vertical',minHeight:80,...props.style}}
       onFocus={e=>{e.target.style.borderColor=C.accent}}
       onBlur={e=>{e.target.style.borderColor=C.border}}/>
   </div>;
@@ -56,11 +56,11 @@ export function Textarea({label,style:st,...props}){
 export function Select({label,style:st,children,...props}){
   const {theme:C} = useTheme();
   return <div style={st}>
-    {label&&<div style={{color:C.sub,fontSize:10,fontWeight:700,marginBottom:5,
+    {label&&<div style={{color:C.sub,fontSize:12,fontWeight:800,marginBottom:6,
       letterSpacing:.6,textTransform:'uppercase'}}>{label}</div>}
     <select {...props} style={{width:'100%',background:C.isLight?'#fff':C.bg,
-      border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',
-      color:C.text,fontSize:13,outline:'none',...props.style}}>{children}</select>
+      border:`1px solid ${C.border}`,borderRadius:10,padding:'11px 13px',
+      color:C.text,fontSize:15,outline:'none',...props.style}}>{children}</select>
   </div>;
 }
 
@@ -75,7 +75,7 @@ export function Btn({variant='primary',children,style:st,...props}){
     amber:   {background:C.amberLo,color:C.amber,border:`1px solid ${C.amber}35`,fontWeight:700},
   };
   return <button {...props} style={{...VARIANTS[variant]||VARIANTS.primary,
-    borderRadius:10,padding:'9px 18px',cursor:'pointer',fontSize:13,
+    borderRadius:10,padding:'11px 20px',cursor:'pointer',fontSize:15,
     display:'inline-flex',alignItems:'center',gap:6,whiteSpace:'nowrap',
     opacity:props.disabled?.5:1,transition:'all .15s',...st}}>{children}</button>;
 }
@@ -194,7 +194,7 @@ export function TR({children,i=0,onClick}){
 
 export function TD({children,style:st}){
   const {theme:C} = useTheme();
-  return <td style={{padding:'12px 16px',fontSize:13,color:C.text,...st}}>{children}</td>;
+  return <td style={{padding:'13px 16px',fontSize:15,color:C.text,...st}}>{children}</td>;
 }
 
 export function MiniChart({data=[]}){

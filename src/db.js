@@ -52,6 +52,27 @@ db.version(3).stores({
   salaryPayments:  '++id, employeeId, createdAt',
 });
 
+db.version(4).stores({
+  products:        '++id, name, ref, category, stock, favorite, expiry, [category+stock], *barcodes',
+  clients:         '++id, name, phone, creditDueDate, creditPolicy, loyaltyEnabled',
+  suppliers:       '++id, name, city',
+  employees:       '++id, name, role, active',
+  sales:           '++id, clientId, employeeId, status, createdAt, [status+createdAt]',
+  saleItems:       '++id, saleId, productId, [saleId+productId]',
+  payments:        '++id, clientId, saleId, createdAt',
+  expenses:        '++id, category, createdAt',
+  purchases:       '++id, supplierId, status, createdAt, dueDate',
+  purchaseItems:   '++id, purchaseId, productId',
+  quotes:          '++id, clientId, status, createdAt',
+  quoteItems:      '++id, quoteId, productId',
+  settings:        'key',
+  salaryPayments:  '++id, employeeId, createdAt',
+  shoppingLists:   '++id, status, source, createdAt',
+  shoppingListItems:'++id, listId, productId',
+  saleTemplates:   '++id, name, createdAt',
+  saleTemplateItems:'++id, templateId, productId',
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 // HELPERS UTILITAIRES
 // ════════════════════════════════════════════════════════════════════════════
@@ -75,7 +96,7 @@ export function fmt(n) {
 // CACHE TTL
 // ════════════════════════════════════════════════════════════════════════════
 
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 10_000;
 const _cache = new Map();
 
 function cacheGet(key) {
@@ -92,6 +113,42 @@ function cacheSet(key, data) {
 export function invalidateCache(key = null) {
   if (key) _cache.delete(key);
   else     _cache.clear();
+}
+
+export async function buildBackupData() {
+  return {
+    version:    6,
+    exportedAt: nowISO(),
+    products:   await db.products.toArray(),
+    clients:    await db.clients.toArray(),
+    suppliers:  await db.suppliers.toArray(),
+    employees:  await db.employees.toArray(),
+    sales:      await db.sales.toArray(),
+    saleItems:  await db.saleItems.toArray(),
+    payments:   await db.payments.toArray(),
+    expenses:   await db.expenses.toArray(),
+    purchases:  await db.purchases.toArray().catch(() => []),
+    purchaseItems: await db.purchaseItems.toArray().catch(() => []),
+    quotes:     await db.quotes.toArray().catch(() => []),
+    quoteItems: await db.quoteItems.toArray().catch(() => []),
+    salaryPayments: await db.salaryPayments.toArray().catch(() => []),
+    shoppingLists: await db.shoppingLists.toArray().catch(() => []),
+    shoppingListItems: await db.shoppingListItems.toArray().catch(() => []),
+    saleTemplates: await db.saleTemplates.toArray().catch(() => []),
+    saleTemplateItems: await db.saleTemplateItems.toArray().catch(() => []),
+    settings:   await db.settings.toArray().catch(() => []),
+  };
+}
+
+export async function saveAutoBackupSnapshot(force = false) {
+  const enabled = localStorage.getItem('vp_auto_backup_enabled') !== 'false';
+  if (!enabled) return null;
+  const last = Number(localStorage.getItem('vp_auto_backup_at') || 0);
+  if (!force && Date.now() - last < 24 * 60 * 60 * 1000) return null;
+  const data = await buildBackupData();
+  localStorage.setItem('vp_auto_backup_snapshot', JSON.stringify(data));
+  localStorage.setItem('vp_auto_backup_at', String(Date.now()));
+  return data;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -326,40 +383,36 @@ export async function seedIfEmpty() {
 // ════════════════════════════════════════════════════════════════════════════
 
 export async function exportBackup() {
-  const data = {
-    version:    5,
-    exportedAt: nowISO(),
-    products:   await db.products.toArray(),
-    clients:    await db.clients.toArray(),
-    suppliers:  await db.suppliers.toArray(),
-    employees:  await db.employees.toArray(),
-    sales:      await db.sales.toArray(),
-    saleItems:  await db.saleItems.toArray(),
-    payments:   await db.payments.toArray(),
-    expenses:   await db.expenses.toArray(),
-    purchases:  await db.purchases.toArray().catch(() => []),
-    purchaseItems: await db.purchaseItems.toArray().catch(() => []),
-    quotes:     await db.quotes.toArray().catch(() => []),
-    quoteItems: await db.quoteItems.toArray().catch(() => []),
-    salaryPayments: await db.salaryPayments.toArray().catch(() => []),
-    settings:   await db.settings.toArray().catch(() => []),
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const data = await buildBackupData();
+  let blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  let extension = 'json';
+  if ('CompressionStream' in window) {
+    const stream = blob.stream().pipeThrough(new CompressionStream('gzip'));
+    blob = await new Response(stream).blob();
+    extension = 'json.gz';
+  }
   const a = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `ventepro-backup-${today()}.json`;
+  a.download = `ventepro-backup-${today()}.${extension}`;
   a.click();
 }
 
 export async function importBackup(file) {
-  const text = await file.text();
+  let text;
+  if (file.name?.endsWith('.gz') && 'DecompressionStream' in window) {
+    const stream = file.stream().pipeThrough(new DecompressionStream('gzip'));
+    text = await new Response(stream).text();
+  } else {
+    text = await file.text();
+  }
   const data = JSON.parse(text);
   if (!data.version) throw new Error('Fichier invalide');
   await db.transaction('rw',
     db.products, db.clients, db.suppliers, db.employees,
     db.sales, db.saleItems, db.payments, db.expenses,
     db.purchases, db.purchaseItems, db.quotes, db.quoteItems,
-    db.salaryPayments, db.settings,
+    db.salaryPayments, db.shoppingLists, db.shoppingListItems,
+    db.saleTemplates, db.saleTemplateItems, db.settings,
     async () => {
       await db.products.clear();      await db.products.bulkAdd(data.products      || []);
       await db.clients.clear();       await db.clients.bulkAdd(data.clients        || []);
@@ -375,6 +428,10 @@ export async function importBackup(file) {
       await db.quotes.clear();        await db.quotes.bulkAdd(data.quotes          || []);
       await db.quoteItems.clear();    await db.quoteItems.bulkAdd(data.quoteItems  || []);
       await db.salaryPayments.clear(); await db.salaryPayments.bulkAdd(data.salaryPayments || []);
+      await db.shoppingLists.clear(); await db.shoppingLists.bulkAdd(data.shoppingLists || []);
+      await db.shoppingListItems.clear(); await db.shoppingListItems.bulkAdd(data.shoppingListItems || []);
+      await db.saleTemplates.clear(); await db.saleTemplates.bulkAdd(data.saleTemplates || []);
+      await db.saleTemplateItems.clear(); await db.saleTemplateItems.bulkAdd(data.saleTemplateItems || []);
       await db.settings.clear();      await db.settings.bulkPut(data.settings      || []);
     }
   );

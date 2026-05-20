@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db, fmt, nowISO } from '../db';
 import { printTicket, printInvoice, printDelivery } from '../components/Ticket';
+import { useTheme } from '../ThemeContext';
+import { DS } from '../designSystem';
+import AIAgentPanel from '../components/AIAgentPanel';
 
 // ─── Palette POS sombre ───────────────────────────────────────────────────────
 const P = {
@@ -71,6 +74,129 @@ function Btn({ icon, label, color, bg, onClick, disabled, wide }) {
   );
 }
 
+function toInputDate(value) {
+  if (!value) return '';
+  const [y, m, d] = value.split('-');
+  if (!y || !m || !d) return value;
+  return `${d}/${m}/${y}`;
+}
+
+function parseInputDate(value) {
+  const trimmed = value.trim();
+  const fr = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (fr) {
+    const [, d, m, y] = fr;
+    const iso = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : '';
+  }
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return iso ? trimmed : '';
+}
+
+function HybridDatePicker({ label, value, onChange, C }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(toInputDate(value));
+  const baseDate = value ? new Date(`${value}T12:00:00`) : new Date();
+  const [cursor, setCursor] = useState(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1));
+
+  useEffect(() => {
+    setDraft(toInputDate(value));
+    if (value) {
+      const d = new Date(`${value}T12:00:00`);
+      setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  }, [value]);
+
+  function commit(nextDraft = draft) {
+    const iso = parseInputDate(nextDraft);
+    if (iso) onChange(iso);
+  }
+
+  function pick(day) {
+    const iso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(iso);
+    setOpen(false);
+  }
+
+  const days = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+  const start = (new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay() + 6) % 7;
+  const cells = Array.from({ length: start + days }, (_, i) => i < start ? null : i - start + 1);
+  const selectedDay = value && value.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-`)
+    ? Number(value.slice(8, 10))
+    : null;
+
+  const inputStyle = {
+    width: '100%',
+    background: C.isLight ? DS.colors.surface : C.card,
+    border: `1.5px solid ${open ? DS.colors.primary : C.border}`,
+    borderRadius: DS.radius.md,
+    padding: '7px 34px 7px 10px',
+    color: C.text,
+    fontSize: 12,
+    outline: 'none',
+    fontFamily: 'inherit',
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ fontSize:9, color:P.sub, fontWeight:800, textTransform:'uppercase', marginBottom:3 }}>{label}</div>
+      <input
+        value={draft}
+        onFocus={() => setOpen(true)}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => commit()}
+        onKeyDown={e => { if (e.key === 'Enter') { commit(); setOpen(false); } }}
+        placeholder="JJ/MM/AAAA"
+        style={inputStyle}
+      />
+      <button
+        type="button"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => setOpen(v => !v)}
+        style={{
+          position:'absolute', right:5, bottom:5, width:24, height:24,
+          border:'none', borderRadius:DS.radius.sm, cursor:'pointer',
+          background:DS.colors.primaryLt, color:DS.colors.primary, fontWeight:900,
+        }}>
+        📅
+      </button>
+      {open && (
+        <div style={{
+          position:'absolute', top:'100%', left:0, marginTop:6, zIndex:10020,
+          width:230, background:C.surface, border:`1.5px solid ${DS.colors.primary}`,
+          borderRadius:DS.radius.md, boxShadow:C.shadow, padding:10, color:C.text,
+        }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>setCursor(new Date(cursor.getFullYear(), cursor.getMonth()-1, 1))}
+              style={{ border:'none', background:DS.colors.primaryLt, color:DS.colors.primary, borderRadius:DS.radius.sm, cursor:'pointer', width:28, height:26 }}>‹</button>
+            <div style={{ fontSize:12, fontWeight:900, color:C.text }}>
+              {cursor.toLocaleDateString('fr-DZ', { month:'long', year:'numeric' })}
+            </div>
+            <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>setCursor(new Date(cursor.getFullYear(), cursor.getMonth()+1, 1))}
+              style={{ border:'none', background:DS.colors.primaryLt, color:DS.colors.primary, borderRadius:DS.radius.sm, cursor:'pointer', width:28, height:26 }}>›</button>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:3 }}>
+            {['L','M','M','J','V','S','D'].map((d, i) => (
+              <div key={`${d}${i}`} style={{ textAlign:'center', fontSize:10, fontWeight:900, color:C.sub }}>{d}</div>
+            ))}
+            {cells.map((day, i) => (
+              <button key={i} type="button" disabled={!day} onMouseDown={e=>e.preventDefault()} onClick={()=>day && pick(day)}
+                style={{
+                  height:26, border:'none', borderRadius:DS.radius.sm,
+                  background: day === selectedDay ? DS.colors.primary : day ? (C.isLight ? DS.colors.neutralLt : C.card) : 'transparent',
+                  color: day === selectedDay ? '#fff' : C.text,
+                  cursor: day ? 'pointer' : 'default', fontWeight:800, fontSize:11,
+                }}>
+                {day || ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Modal Versement ───────────────────────────────────────────────────────────
 function PayModal({ sale, onClose, onDone }) {
   const [amount, setAmount] = useState('');
@@ -134,19 +260,30 @@ function PayModal({ sale, onClose, onDone }) {
 // COMPOSANT PRINCIPAL
 // ═════════════════════════════════════════════════════════════════════════════
 export default function DetailedSalesList({ onClose, currentClient, currentTotal }) {
+  const { theme: C } = useTheme();
   const [sales,      setSales]      = useState([]);
   const [products,   setProducts]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedItemId, setSelectedItemId] = useState(null);
   const [search,      setSearch]     = useState('');
-  const [filter,      setFilter]     = useState('jour');
+  const [filter,      setFilter]     = useState('tous');
+  const [earliestDate, setEarliestDate] = useState('');
+  const [dateFrom,    setDateFrom]   = useState('');
+  const [dateTo,      setDateTo]     = useState(() => new Date().toISOString().slice(0, 10));
+  const [clientSearch, setClientSearch] = useState('');
+  const [productSearch, setProductSearch] = useState('');
 
   const [prodSearch, setProdSearch] = useState('');
   const [barcode,    setBarcode]    = useState('');
   const [qty,        setQty]        = useState(1);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [selectedAddProductId, setSelectedAddProductId] = useState(null);
+  const [highlightedAddProduct, setHighlightedAddProduct] = useState(0);
 
   const [payModal,   setPayModal]   = useState(null);
   const [confirm,    setConfirm]    = useState(null);
+  const [showAIPanel, setShowAIPanel] = useState(false);
 
   const prodRef = useRef();
   const barcodeRef = useRef();
@@ -156,7 +293,7 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
   async function load() {
     setLoading(true);
     const [v, p] = await Promise.all([
-      db.sales.orderBy('createdAt').reverse().limit(300).toArray(),
+      db.sales.orderBy('createdAt').reverse().toArray(),
       db.products.toArray(),
     ]);
     const enriched = await Promise.all(v.map(async s => {
@@ -165,6 +302,10 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
     }));
     setSales(enriched);
     setProducts(p);
+    const firstChronological = enriched[enriched.length - 1];
+    const firstDate = firstChronological?.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+    setEarliestDate(firstDate);
+    setDateFrom(prev => prev || firstDate);
     const today = new Date().toISOString().slice(0,10);
     const first = enriched.find(s => s.createdAt?.startsWith(today));
     if (first) setSelectedId(first.id);
@@ -178,24 +319,103 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
     if (search) list = list.filter(s =>
       s.clientName?.toLowerCase().includes(search.toLowerCase()) || String(s.id).includes(search)
     );
+    if (clientSearch) {
+      const q = clientSearch.toLowerCase();
+      list = list.filter(s => s.clientName?.toLowerCase().includes(q));
+    }
+    if (productSearch) {
+      const q = productSearch.toLowerCase();
+      list = list.filter(s => (s.items || []).some(i => i.productName?.toLowerCase().includes(q) || String(i.productId || '').includes(q)));
+    }
+    if (dateFrom) list = list.filter(s => (s.createdAt || '') >= `${dateFrom}T00:00:00.000Z`);
+    if (dateTo) list = list.filter(s => (s.createdAt || '') <= `${dateTo}T23:59:59.999Z`);
     if (filter==='jour')   list = list.filter(s => s.createdAt?.startsWith(today));
     if (filter==='payé')   list = list.filter(s => s.status==='payé');
     if (filter==='crédit') list = list.filter(s => s.status==='crédit');
     return list;
-  }, [sales, search, filter]);
+  }, [sales, search, clientSearch, productSearch, dateFrom, dateTo, filter]);
+
+  useEffect(() => {
+    if (filtered.length && !filtered.some(s => s.id === selectedId)) {
+      setSelectedId(filtered[0].id);
+    }
+  }, [filtered, selectedId]);
+
+  useEffect(() => {
+    setSelectedItemId(null);
+  }, [selectedId]);
 
   const selected     = sales.find(s => s.id === selectedId);
   const selItems     = selected?.items || [];
+  const selectedItem  = selItems.find(i => i.id === selectedItemId) || null;
+
+  const normalize = value => String(value || '').trim().toLowerCase();
+
+  const productUsage = useMemo(() => {
+    const usage = new Map();
+    sales.forEach(sale => {
+      (sale.items || []).forEach(item => {
+        const key = item.productId || item.productName;
+        if (!key) return;
+        const row = usage.get(key) || { qty: 0, count: 0, lastAt: '' };
+        row.qty += Math.abs(Number(item.qty || 0));
+        row.count += 1;
+        if ((sale.createdAt || '') > row.lastAt) row.lastAt = sale.createdAt || '';
+        usage.set(key, row);
+      });
+    });
+    return usage;
+  }, [sales]);
+
+  const addProductSuggestions = useMemo(() => {
+    const qName = normalize(prodSearch);
+    const qCode = normalize(barcode);
+    const hasQuery = !!qName || !!qCode;
+    return products
+      .map(product => {
+        const usage = productUsage.get(product.id) || productUsage.get(product.name) || { qty: 0, count: 0, lastAt: '' };
+        const name = normalize(product.name);
+        const ref = normalize(product.ref);
+        const codes = [product.barcode, ...(product.barcodes || [])].map(normalize).filter(Boolean);
+        const nameMatch = qName && (name.includes(qName) || ref.includes(qName));
+        const codeMatch = qCode && (codes.some(code => code.includes(qCode)) || ref.includes(qCode));
+        const exactBoost =
+          (qName && name.startsWith(qName) ? 500 : 0) +
+          (qCode && (codes.some(code => code.startsWith(qCode)) || ref.startsWith(qCode)) ? 700 : 0);
+        return { product, usage, match: !hasQuery || nameMatch || codeMatch, score: exactBoost + usage.qty * 6 + usage.count * 3 };
+      })
+      .filter(row => row.match)
+      .sort((a, b) => b.score - a.score || (b.usage.lastAt || '').localeCompare(a.usage.lastAt || '') || (a.product.name || '').localeCompare(b.product.name || ''))
+      .slice(0, 8);
+  }, [products, productUsage, prodSearch, barcode]);
 
   const foundProd = useMemo(() => {
-    if (!prodSearch && !barcode) return null;
-    const q = (prodSearch||barcode).toLowerCase();
-    return products.find(p =>
-      p.name?.toLowerCase().includes(q) ||
-      p.barcode?.includes(q) ||
-      p.ref?.toLowerCase().includes(q)
-    ) || null;
-  }, [prodSearch, barcode, products]);
+    if (selectedAddProductId) return products.find(p => p.id === selectedAddProductId) || null;
+    return addProductSuggestions[0]?.product || null;
+  }, [selectedAddProductId, products, addProductSuggestions]);
+
+  useEffect(() => {
+    setHighlightedAddProduct(0);
+  }, [prodSearch, barcode, addProductSuggestions.length]);
+
+  function chooseAddProduct(product) {
+    setSelectedAddProductId(product.id);
+    setProdSearch(product.name || '');
+    setBarcode(product.barcode || product.barcodes?.[0] || '');
+    setProductPickerOpen(false);
+  }
+
+  function handleAddProductKeyDown(e) {
+    if (!productPickerOpen && (e.key === 'ArrowDown' || e.key === 'Enter')) setProductPickerOpen(true);
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedAddProduct(i => Math.min(i + 1, addProductSuggestions.length - 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setHighlightedAddProduct(i => Math.max(i - 1, 0)); }
+    if (e.key === 'Escape')    { setProductPickerOpen(false); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const row = addProductSuggestions[highlightedAddProduct] || addProductSuggestions[0];
+      if (row) chooseAddProduct(row.product);
+    }
+  }
 
   const stats = useMemo(() => {
     const list = filtered;
@@ -208,15 +428,108 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
 
   async function deleteSale() {
     if (!selected) return;
-    await db.saleItems.where('saleId').equals(selected.id).delete();
-    await db.sales.delete(selected.id);
+    await db.transaction('rw', db.sales, db.saleItems, db.products, async () => {
+      const items = await db.saleItems.where('saleId').equals(selected.id).toArray();
+      for (const item of items) {
+        if (!item.productId) continue;
+        const product = await db.products.get(item.productId);
+        if (product) {
+          await db.products.update(item.productId, {
+            stock: Number(product.stock || 0) + Number(item.qty || 0),
+            updatedAt: nowISO(),
+          });
+        }
+      }
+      await db.saleItems.where('saleId').equals(selected.id).delete();
+      await db.sales.delete(selected.id);
+    });
     setSelectedId(null); setConfirm(null); await load();
   }
 
+  async function recalcSale(saleId) {
+    const sale = await db.sales.get(saleId);
+    if (!sale) return;
+    const items = await db.saleItems.where('saleId').equals(saleId).toArray();
+    const subtotal = items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.qty || 0), 0);
+    const cost = items.reduce((sum, item) => sum + Number(item.buyPrice || 0) * Number(item.qty || 0), 0);
+    const discount = Math.min(Number(sale.discount || 0), Math.max(0, subtotal));
+    const total = Math.max(0, subtotal - discount + Number(sale.tva || 0));
+    const paid = Math.min(Number(sale.paid || 0), total);
+    await db.sales.update(saleId, {
+      subtotal,
+      total,
+      paid,
+      discount,
+      margin: total - cost,
+      status: paid >= total && total > 0 ? 'payé' : 'crédit',
+      updatedAt: nowISO(),
+    });
+  }
+
   async function deleteLastItem() {
-    if (!selItems.length) return;
-    await db.saleItems.delete(selItems[selItems.length-1].id);
+    const item = selectedItem || selItems[selItems.length-1];
+    if (!selected || !item) return;
+    await db.transaction('rw', db.sales, db.saleItems, db.products, async () => {
+      await db.saleItems.delete(item.id);
+      if (item.productId) {
+        const product = await db.products.get(item.productId);
+        if (product) await db.products.update(item.productId, { stock: Number(product.stock || 0) + Number(item.qty || 0), updatedAt: nowISO() });
+      }
+      await recalcSale(selected.id);
+    });
+    setSelectedItemId(null);
     setConfirm(null); await load();
+  }
+
+  async function addProductToSale() {
+    if (!selected || !foundProd || !qty) return;
+    const addQty = Math.max(1, Number(qty) || 1);
+    if (Number(foundProd.stock || 0) < addQty) alert(`Stock insuffisant (${foundProd.stock || 0}). Ajout accepte avec stock negatif.`);
+    await db.transaction('rw', db.sales, db.saleItems, db.products, async () => {
+      await db.saleItems.add({
+        saleId: selected.id,
+        productId: foundProd.id,
+        productName: foundProd.name,
+        qty: addQty,
+        buyPrice: Number(foundProd.buyPrice || 0),
+        unitPrice: Number(foundProd.sellPrice || 0),
+        margin: (Number(foundProd.sellPrice || 0) - Number(foundProd.buyPrice || 0)) * addQty,
+        createdAt: nowISO(),
+      });
+      const before = Number(foundProd.stock || 0);
+      const after = before - addQty;
+      await db.products.update(foundProd.id, {
+        stock: after,
+        updatedAt: nowISO(),
+        stockHistory: [...(foundProd.stockHistory || []), {
+          at: nowISO(),
+          before,
+          after,
+          delta: -addQty,
+          source: 'liste_ventes',
+          saleId: selected.id,
+          note: after < 0 ? 'Ajout vente avec stock negatif' : 'Ajout produit dans vente existante',
+        }],
+      });
+      await recalcSale(selected.id);
+    });
+    setProdSearch('');
+    setBarcode('');
+    setSelectedAddProductId(null);
+    setProductPickerOpen(false);
+    setQty(1);
+    await load();
+  }
+
+  async function setPaymentStatus(status) {
+    if (!selected) return;
+    const total = Number(selected.total || 0);
+    await db.sales.update(selected.id, {
+      status,
+      paid: status === 'payé' ? total : Math.min(Number(selected.paid || 0), Math.max(0, total - 1)),
+      updatedAt: nowISO(),
+    });
+    await load();
   }
 
   function fD(iso) { try { return new Date(iso).toLocaleDateString('fr-DZ',{day:'2-digit',month:'2-digit',year:'2-digit'}); } catch { return ''; } }
@@ -230,11 +543,11 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
     position:'sticky', top:0, zIndex:2,
     ...extra,
   });
-  const TD = (alt=false, extra={}) => ({
-    padding:'4px 9px', fontSize:12, color:P.txt,
-    background: alt ? '#111827' : 'transparent',
-    borderBottom:`1px solid ${P.bdrLt}`,
-    borderRight:`1px solid ${P.bdrLt}`,
+  const TD = (alt=false, extra={}, selected=false) => ({
+    padding:'4px 9px', fontSize:12, color:selected && C.isLight ? DS.colors.neutralDk : P.txt,
+    background: selected ? (C.isLight ? DS.colors.primaryLt : `${DS.colors.primary}30`) : alt ? '#111827' : 'transparent',
+    borderBottom:`1px solid ${selected ? DS.colors.primary : P.bdrLt}`,
+    borderRight:`1px solid ${selected ? DS.colors.primaryBd : P.bdrLt}`,
     whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
     ...extra,
   });
@@ -268,7 +581,7 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
     }}>
 
       {/* HEADER */}
-      <div style={{ background:P.hdr, borderBottom:`2px solid ${P.blueDk}`,
+      <div style={{ display:'none', background:P.hdr, borderBottom:`2px solid ${P.blueDk}`,
         padding:'7px 14px', flexShrink:0 }}>
         <div style={{ display:'grid', gridTemplateColumns:'280px 1fr auto', gap:14, alignItems:'center' }}>
 
@@ -319,13 +632,13 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
             <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
               <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                 <span style={{ fontSize:9, color:P.sub, fontWeight:700, width:90, flexShrink:0 }}>NOM [F1] :</span>
-                <input ref={prodRef} value={prodSearch} onChange={e=>setProdSearch(e.target.value)}
+                <input ref={prodRef} value={prodSearch} onFocus={()=>setProductPickerOpen(true)} onKeyDown={handleAddProductKeyDown} onChange={e=>{ setProdSearch(e.target.value); setSelectedAddProductId(null); setProductPickerOpen(true); }}
                   placeholder="Rechercher..."
                   style={{ ...inpStyle, flex:1 }}/>
               </div>
               <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                 <span style={{ fontSize:9, color:P.sub, fontWeight:700, width:90, flexShrink:0 }}>CODE [F2] :</span>
-                <input ref={barcodeRef} value={barcode} onChange={e=>setBarcode(e.target.value)}
+                <input ref={barcodeRef} value={barcode} onFocus={()=>setProductPickerOpen(true)} onKeyDown={handleAddProductKeyDown} onChange={e=>{ setBarcode(e.target.value); setSelectedAddProductId(null); setProductPickerOpen(true); }}
                   placeholder="Code-barres..."
                   style={{ ...inpStyle, flex:1 }}/>
               </div>
@@ -342,6 +655,23 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
                   padding:'4px 8px', fontSize:11 }}>
                   <span style={{ color:P.txt, fontWeight:700 }}>{foundProd.name}</span>
                   <span style={{ color:P.blue, fontWeight:800, marginLeft:10 }}>{fmt(foundProd.sellPrice)}</span>
+                </div>
+              )}
+              {productPickerOpen && addProductSuggestions.length > 0 && (
+                <div style={{ background:P.surface, border:`1px solid ${P.blue}45`, borderRadius:6, overflow:'hidden', maxHeight:190, overflowY:'auto' }}>
+                  <div style={{ padding:'4px 8px', fontSize:9, color:P.sub, borderBottom:`1px solid ${P.border}`, fontWeight:800, textTransform:'uppercase' }}>
+                    {prodSearch || barcode ? 'Suggestions trouvees' : 'Produits les plus utilises'}
+                  </div>
+                  {addProductSuggestions.map((row, i) => (
+                    <button key={row.product.id} type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>chooseAddProduct(row.product)}
+                      style={{ width:'100%', display:'grid', gridTemplateColumns:'1fr auto', gap:8, alignItems:'center', border:'none', borderBottom:`1px solid ${P.border}`, background:i===highlightedAddProduct?P.sel:P.surface, color:P.txt, padding:'6px 8px', cursor:'pointer', textAlign:'left' }}>
+                      <span style={{ minWidth:0 }}>
+                        <span style={{ display:'block', fontSize:11, fontWeight:900, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.product.name}</span>
+                        <span style={{ display:'block', fontSize:9, color:P.sub }}>Stock {row.product.stock || 0} · Utilise {row.usage.qty || 0} fois</span>
+                      </span>
+                      <span style={{ fontSize:11, color:P.green, fontWeight:900 }}>{fmt(row.product.sellPrice)}</span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -381,12 +711,17 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
 
         <div style={{ width:1, height:44, background:P.border, margin:'0 3px' }}/>
 
-        <Btn icon="📊" label={"Ventes\ndétaillées"}  color={P.txt} bg={P.cyan+'22'}
+        <Btn icon="IA" label={"Agent\nIA"}  color={P.txt} bg={P.cyan+'22'}
           disabled={!selected}
-          onClick={()=>{ if(selected) alert(`Vente VX-${String(selected.id).padStart(4,'0')}\nClient: ${selected.clientName||'Passage'}\nTotal: ${fmt(selected.total)}\n${selItems.length} article(s)`); }}/>
+          onClick={()=>setShowAIPanel(true)}/>
         <Btn icon="💳" label={"Versement\nclient"}    color={P.txt} bg={P.cyan+'22'}
           disabled={!selected||selected.status==='payé'}
           onClick={()=>setPayModal(selected)}/>
+
+        <Btn icon="✓" label={"Marquer\npayé"} color={P.green} bg="#14532D"
+          disabled={!selected||selected.status==='payé'} onClick={()=>setPaymentStatus('payé')}/>
+        <Btn icon="!" label={"Mettre\ncrédit"} color={P.amber} bg="#78350F"
+          disabled={!selected||selected.status==='crédit'} onClick={()=>setPaymentStatus('crédit')}/>
 
         {/* Filtre rapide */}
         <div style={{ display:'flex', gap:4, marginLeft:8 }}>
@@ -413,7 +748,64 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
           onClick={onClose} wide/>
       </div>
 
+      <div style={{ background:P.surface, borderBottom:`1px solid ${P.border}`, padding:'8px 12px', display:'grid', gridTemplateColumns:'repeat(5, minmax(120px, 1fr)) auto', gap:8, alignItems:'end', flexShrink:0 }}>
+        <HybridDatePicker label="Du" value={dateFrom} C={C} onChange={v=>{ setDateFrom(v); setFilter('tous'); }} />
+        <HybridDatePicker label="Au" value={dateTo} C={C} onChange={v=>{ setDateTo(v); setFilter('tous'); }} />
+        <div>
+          <div style={{ fontSize:9, color:P.sub, fontWeight:800, textTransform:'uppercase', marginBottom:3 }}>Client</div>
+          <input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder="Nom client..." style={{ ...inpStyle, width:'100%' }}/>
+        </div>
+        <div>
+          <div style={{ fontSize:9, color:P.sub, fontWeight:800, textTransform:'uppercase', marginBottom:3 }}>Produit</div>
+          <input value={productSearch} onChange={e=>setProductSearch(e.target.value)} placeholder="Nom produit..." style={{ ...inpStyle, width:'100%' }}/>
+        </div>
+        <div>
+          <div style={{ fontSize:9, color:P.sub, fontWeight:800, textTransform:'uppercase', marginBottom:3 }}>Ticket</div>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Numero ou client..." style={{ ...inpStyle, width:'100%' }}/>
+        </div>
+        <button onClick={()=>{ setSearch(''); setClientSearch(''); setProductSearch(''); setDateFrom(earliestDate); setDateTo(new Date().toISOString().slice(0, 10)); setFilter('tous'); }} style={{ background:P.redDk, border:'none', borderRadius:5, color:'#fff', padding:'7px 12px', fontSize:11, fontWeight:800, cursor:'pointer' }}>Reset</button>
+      </div>
+
       {/* MASTER — Tableau ventes */}
+      <div style={{ background:'#0B1628', borderBottom:`1px solid ${P.border}`, padding:'7px 12px', display:'grid', gridTemplateColumns:'1.4fr 1fr 72px 1.2fr auto', gap:8, alignItems:'center', flexShrink:0 }}>
+        <div style={{ position:'relative' }}>
+        <input ref={prodRef} value={prodSearch} onFocus={()=>setProductPickerOpen(true)} onKeyDown={handleAddProductKeyDown} onChange={e=>{ setProdSearch(e.target.value); setSelectedAddProductId(null); setProductPickerOpen(true); }}
+          placeholder="Ajouter produit par nom..."
+          style={{ ...inpStyle, width:'100%', padding:'7px 10px' }}/>
+        {productPickerOpen && addProductSuggestions.length > 0 && (
+          <div style={{ position:'absolute', left:0, right:-360, top:'calc(100% + 4px)', zIndex:10030, background:P.surface, border:`1px solid ${P.blue}`, borderRadius:7, boxShadow:'0 18px 50px rgba(0,0,0,.45)', overflow:'hidden', maxHeight:260, overflowY:'auto' }}>
+            <div style={{ padding:'6px 10px', background:P.blueHd, color:P.txt, fontSize:10, fontWeight:900, display:'flex', justifyContent:'space-between' }}>
+              <span>{prodSearch || barcode ? 'Suggestions produit' : 'Les plus utilises'}</span>
+              <span style={{ color:P.sub }}>Entree pour choisir</span>
+            </div>
+            {addProductSuggestions.map((row, i) => (
+              <button key={row.product.id} type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>chooseAddProduct(row.product)}
+                style={{ width:'100%', border:'none', borderBottom:`1px solid ${P.border}`, background:i===highlightedAddProduct?P.sel:P.surface, color:P.txt, display:'grid', gridTemplateColumns:'1fr 100px 90px', gap:10, alignItems:'center', padding:'8px 10px', textAlign:'left', cursor:'pointer' }}>
+                <span style={{ minWidth:0 }}>
+                  <span style={{ display:'block', fontWeight:900, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.product.name}</span>
+                  <span style={{ display:'block', color:P.sub, fontSize:10 }}>{row.product.ref || row.product.barcode || 'Sans reference'}</span>
+                </span>
+                <span style={{ color:Number(row.product.stock || 0) <= 0 ? P.red : P.green, fontSize:11, fontWeight:900 }}>Stock {row.product.stock || 0}</span>
+                <span style={{ color:P.blue, fontSize:11, fontWeight:900, textAlign:'right' }}>{fmt(row.product.sellPrice)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        </div>
+        <input ref={barcodeRef} value={barcode} onFocus={()=>setProductPickerOpen(true)} onKeyDown={handleAddProductKeyDown} onChange={e=>{ setBarcode(e.target.value); setSelectedAddProductId(null); setProductPickerOpen(true); }}
+          placeholder="Code-barres / ref..."
+          style={{ ...inpStyle, width:'100%', padding:'7px 10px' }}/>
+        <input type="number" value={qty} min={1} onChange={e=>setQty(Number(e.target.value)||1)}
+          style={{ ...inpStyle, width:'100%', padding:'7px 8px', textAlign:'center', color:P.yellow, fontWeight:900 }}/>
+        <div style={{ fontSize:11, fontWeight:800, color:foundProd ? (Number(foundProd.stock||0) <= 0 ? P.red : P.green) : P.sub, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {foundProd ? `${foundProd.name} · Stock ${foundProd.stock || 0} · ${fmt(foundProd.sellPrice)}` : selected ? 'Selectionnez un produit a ajouter a cette vente' : 'Selectionnez une vente'}
+        </div>
+        <button onClick={addProductToSale} disabled={!selected || !foundProd}
+          style={{ background:(!selected||!foundProd)?P.card:P.green, border:`1px solid ${(!selected||!foundProd)?P.border:P.green}`, borderRadius:6, color:'#fff', padding:'8px 13px', fontSize:11, fontWeight:900, cursor:(!selected||!foundProd)?'not-allowed':'pointer', opacity:(!selected||!foundProd)?.45:1 }}>
+          + Ajouter
+        </button>
+      </div>
+
       <div style={{ flex:'0 0 40%', overflow:'hidden', display:'flex', flexDirection:'column',
         borderBottom:`2px solid ${P.border}` }}>
         <div style={{ flex:1, overflowY:'auto' }}>
@@ -432,16 +824,17 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
                   <tr key={s.id} onClick={()=>setSelectedId(s.id)}
                     style={{
                       cursor:'pointer',
-                      background: isSel ? P.sel : i%2===0 ? 'transparent' : P.surface,
+                      background: isSel ? (C.isLight ? DS.colors.primaryLt : `${DS.colors.primary}22`) : i%2===0 ? 'transparent' : P.surface,
+                      boxShadow: isSel ? `inset 4px 0 0 ${DS.colors.primary}` : 'none',
                     }}>
-                    <td style={TD(i%2!==0,{color:P.cyan,fontFamily:'monospace',fontWeight:800})}>{String(s.id).padStart(4,'0')}</td>
-                    <td style={TD(i%2!==0,{fontWeight:600})}>{s.clientName||'Passage'}</td>
-                    <td style={TD(i%2!==0)}>{fD(s.createdAt)}</td>
-                    <td style={TD(i%2!==0)}>{fT(s.createdAt)}</td>
-                    <td style={TD(i%2!==0)}>{s.payMode}</td>
-                    <td style={TD(i%2!==0,{fontWeight:900,color:P.blue})}>{fmt(s.total)}</td>
-                    <td style={TD(i%2!==0,{color:P.green})}>{fmt(s.paid)}</td>
-                    <td style={TD(i%2!==0)}>
+                    <td style={TD(i%2!==0,{color:isSel?DS.colors.primary:P.cyan,fontFamily:'monospace',fontWeight:900}, isSel)}>{String(s.id).padStart(4,'0')}</td>
+                    <td style={TD(i%2!==0,{fontWeight:800}, isSel)}>{s.clientName||'Passage'}</td>
+                    <td style={TD(i%2!==0,{}, isSel)}>{fD(s.createdAt)}</td>
+                    <td style={TD(i%2!==0,{}, isSel)}>{fT(s.createdAt)}</td>
+                    <td style={TD(i%2!==0,{}, isSel)}>{s.payMode}</td>
+                    <td style={TD(i%2!==0,{fontWeight:900,color:isSel?DS.colors.primary:P.blue}, isSel)}>{fmt(s.total)}</td>
+                    <td style={TD(i%2!==0,{color:P.green}, isSel)}>{fmt(s.paid)}</td>
+                    <td style={TD(i%2!==0,{}, isSel)}>
                       <span style={{ background:s.status==='payé'?'#14532D':'#78350F', padding:'2px 8px', borderRadius:4, fontSize:10 }}>{s.status}</span>
                     </td>
                   </tr>
@@ -468,14 +861,18 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
               </tr>
             </thead>
             <tbody>
-              {selItems.map((item, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : P.surface }}>
-                  <td style={TD(i % 2 !== 0)}>{item.productName}</td>
-                  <td style={TD(i % 2 !== 0)}>{fmt(item.unitPrice)}</td>
-                  <td style={TD(i % 2 !== 0)}>{item.qty}</td>
-                  <td style={TD(i % 2 !== 0, { textAlign: 'right', fontWeight: 900 })}>{fmt(item.unitPrice * item.qty)}</td>
-                </tr>
-              ))}
+              {selItems.map((item, i) => {
+                const isItemSel = item.id === selectedItemId;
+                return (
+                  <tr key={item.id || i} onClick={()=>setSelectedItemId(item.id)}
+                    style={{ cursor:'pointer', background: isItemSel ? (C.isLight ? DS.colors.primaryLt : `${DS.colors.primary}30`) : i % 2 === 0 ? 'transparent' : P.surface }}>
+                    <td style={TD(i % 2 !== 0, { fontWeight: isItemSel ? 900 : 600 }, isItemSel)}>{item.productName}</td>
+                    <td style={TD(i % 2 !== 0, {}, isItemSel)}>{fmt(item.unitPrice)}</td>
+                    <td style={TD(i % 2 !== 0, { color:isItemSel?DS.colors.primary:P.yellow, fontWeight:900 }, isItemSel)}>{item.qty}</td>
+                    <td style={TD(i % 2 !== 0, { textAlign: 'right', fontWeight: 900 }, isItemSel)}>{fmt(item.unitPrice * item.qty)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -495,6 +892,14 @@ export default function DetailedSalesList({ onClose, currentClient, currentTotal
       </div>
 
       {/* Modals */}
+      {showAIPanel && (
+        <AIAgentPanel
+          onClose={()=>setShowAIPanel(false)}
+          liveData={{ products, sales, sale:selected, saleItems:selItems }}
+          userRole="admin"
+          defaultAgentId="sales"
+        />
+      )}
       {payModal && <PayModal sale={payModal} onClose={()=>setPayModal(null)} onDone={load}/>}
       {confirm && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:10000, display:'flex', alignItems:'center', justifyContent:'center' }}>

@@ -4,6 +4,8 @@ import { db, fmt, today, nowISO } from '../db';
 import CameraAI from '../components/CameraAI';
 import stockAgent from '../components/StockAgent';
 import AgentSuggestionPanel from '../components/AgentSuggestionPanel';
+import { formatDateTime, generateEAN13Barcode } from '../productUtils';
+import ShoppingListModal from '../components/ShoppingListModal';
 
 // ─── Tokens locaux dérivés du thème dynamique ─────────────────────────────────
 // NE PAS éditer ces valeurs directement — elles proviennent de useTheme()
@@ -183,7 +185,10 @@ const EMPTY = {
 
 function ProductModal({ product, onClose, onSave, initialData }) {
   const D     = useDesignTokens();
-  const [form, setForm]   = useState(product ? { ...product, barcodes: product.barcodes || [] } : initialData || EMPTY);
+  const initialForm = product
+    ? { ...product, barcodes: product.barcodes || [] }
+    : { ...EMPTY, ...(initialData || {}), barcode: initialData?.barcode || generateEAN13Barcode() };
+  const [form, setForm]   = useState(initialForm);
   const [saving, setSaving] = useState(false);
   const [tab,    setTab]    = useState('general');
   const [labelCopies, setLabelCopies] = useState(1);
@@ -207,6 +212,10 @@ function ProductModal({ product, onClose, onSave, initialData }) {
     setForm(f => ({ ...f, barcodes: f.barcodes.filter((_, idx) => idx !== i) }));
   }
 
+  function generateBarcode() {
+    setForm(f => ({ ...f, barcode: generateEAN13Barcode() }));
+  }
+
   async function save() {
     if (!form.name.trim())  return alert('Nom requis');
     if (!form.sellPrice)    return alert('Prix de vente requis');
@@ -221,9 +230,19 @@ function ProductModal({ product, onClose, onSave, initialData }) {
       stock: Number(form.stock) || 0, minStock: Number(form.minStock) || 5,
       unit: form.unit || 'pce', expiry: form.expiry || null,
       favorite: !!form.favorite, description: form.description || '',
-      supplier: form.supplier || '', updatedAt: nowISO(),
+      supplier: form.supplier || '',
+      createdAt: product?.createdAt || form.createdAt || now,
+      updatedAt: now,
     };
-    if (isNew) { payload.createdAt = nowISO(); await db.products.add(payload); }
+    if (!isNew) {
+      payload.stockHistory = [...(current?.stockHistory || product?.stockHistory || [])];
+      if (oldStock !== newStock) payload.stockHistory.push({ at: now, before: oldStock, after: newStock, delta: newStock - oldStock, source: 'produits', note: 'Modification depuis la fiche produit' });
+      payload.modificationHistory = [...(current?.modificationHistory || product?.modificationHistory || []), { at: now, source: 'produits', changes: { name: current?.name !== payload.name ? { before: current?.name || '', after: payload.name } : null, barcode: (current?.barcode || '') !== (payload.barcode || '') ? { before: current?.barcode || '', after: payload.barcode || '' } : null, stock: oldStock !== newStock ? { before: oldStock, after: newStock } : null, sellPrice: Number(current?.sellPrice || 0) !== Number(payload.sellPrice || 0) ? { before: Number(current?.sellPrice || 0), after: Number(payload.sellPrice || 0) } : null } }];
+    } else {
+      payload.stockHistory = [{ at: now, before: 0, after: newStock, delta: newStock, source: 'creation', note: 'Stock initial' }];
+      payload.modificationHistory = [{ at: now, source: 'creation', changes: { created: { after: payload.name } } }];
+    }
+    if (isNew) { await db.products.add(payload); }
     else await db.products.update(product.id, payload);
     onSave(); setSaving(false);
   }
@@ -347,6 +366,9 @@ function ProductModal({ product, onClose, onSave, initialData }) {
               <G D={D} ac={D.blue} style={{ padding: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: D.blue, textTransform: 'uppercase', letterSpacing: .7, marginBottom: 10 }}>📊 Code-barres principal</div>
                 <Inp label="Code-barres" value={form.barcode || ''} onChange={e => set('barcode', e.target.value)} placeholder="Scannez ou saisissez..." color={D.blue} D={D} />
+                <button onClick={generateBarcode} style={{ marginTop: 10, background: D.blueLt, border: `1.5px solid ${D.blueBd}`, borderRadius: D.Rs, padding: '8px 12px', color: D.blue, fontWeight: 800, cursor: 'pointer', fontSize: 12 }}>
+                  Generer un code-barres EAN-13
+                </button>
               </G>
               <G D={D} ac={D.indigo} style={{ padding: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: D.indigo, textTransform: 'uppercase', letterSpacing: .7, marginBottom: 10 }}>
@@ -420,14 +442,21 @@ export default function Products() {
   const [confirm,    setConfirm]    = useState(null);
   const [view,       setView]       = useState('liste');
   const [showCamera, setShowCamera] = useState(false);
+  const [showShoppingList, setShowShoppingList] = useState(false);
   const [cameraInitData, setCameraInitData] = useState(null);
 
   const [advStock, setAdvStock] = useState('');
   const [advPrice, setAdvPrice] = useState('');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
   const [showAdv,  setShowAdv]  = useState(false);
   const [stockSuggestions, setStockSuggestions] = useState([]);
+  const [inventoryFrom, setInventoryFrom] = useState(() => today().slice(0, 7) + '-01');
+  const [inventoryTo, setInventoryTo] = useState(() => today());
+  const [inventoryPeriod, setInventoryPeriod] = useState({ qty: 0, ca: 0, cost: 0, profit: 0, returns: 0, byProduct: [] });
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { loadInventoryPeriod(); }, [inventoryFrom, inventoryTo, products]); // eslint-disable-line
 
   async function load() {
     setLoading(true);
@@ -437,9 +466,60 @@ export default function Products() {
     setLoading(false);
   }
 
+  async function loadInventoryPeriod() {
+    if (!inventoryFrom || !inventoryTo || products.length === 0) return;
+    const start = `${inventoryFrom}T00:00:00.000Z`;
+    const end = `${inventoryTo}T23:59:59.999Z`;
+    const sales = await db.sales.where('createdAt').between(start, end, true, true).toArray().catch(() => []);
+    const saleIds = sales.map(s => s.id);
+    if (!saleIds.length) {
+      setInventoryPeriod({ qty: 0, ca: 0, cost: 0, profit: 0, returns: 0, byProduct: [] });
+      return;
+    }
+    const items = await db.saleItems.where('saleId').anyOf(saleIds).toArray().catch(() => []);
+    const rows = new Map();
+    for (const item of items) {
+      const key = item.productId || item.productName;
+      const row = rows.get(key) || { productId: item.productId, name: item.productName, qty: 0, ca: 0, cost: 0, profit: 0, returns: 0 };
+      const qty = Number(item.qty || 0);
+      const ca = qty * Number(item.unitPrice || 0);
+      const cost = qty * Number(item.buyPrice || 0);
+      row.qty += qty;
+      row.ca += ca;
+      row.cost += cost;
+      row.profit += ca - cost;
+      if (qty < 0) row.returns += Math.abs(qty);
+      rows.set(key, row);
+    }
+    const byProduct = [...rows.values()].sort((a, b) => b.ca - a.ca);
+    setInventoryPeriod({
+      qty: byProduct.reduce((s, r) => s + r.qty, 0),
+      ca: byProduct.reduce((s, r) => s + r.ca, 0),
+      cost: byProduct.reduce((s, r) => s + r.cost, 0),
+      profit: byProduct.reduce((s, r) => s + r.profit, 0),
+      returns: byProduct.reduce((s, r) => s + r.returns, 0),
+      byProduct,
+    });
+  }
+
   async function adjustStock(id, delta) {
     const p = await db.products.get(id);
-    if (p) await db.products.update(id, { stock: Math.max(0, p.stock + delta) });
+    if (p) {
+      const before = Number(p.stock || 0);
+      const after = before + delta;
+      await db.products.update(id, {
+        stock: after,
+        updatedAt: nowISO(),
+        stockHistory: [...(p.stockHistory || []), {
+          at: nowISO(),
+          before,
+          after,
+          delta,
+          source: 'produits',
+          note: 'Ajustement rapide stock',
+        }],
+      });
+    }
     await load();
   }
 
@@ -483,11 +563,13 @@ export default function Products() {
     if (filter === 'stock bas') list = list.filter(p => p.stock > 0 && p.stock <= (p.minStock || 5));
     if (filter === 'rupture')   list = list.filter(p => p.stock === 0);
     if (filter === 'périmés')   list = list.filter(p => p.expiry && p.expiry < today());
+    if (createdFrom) list = list.filter(p => (p.createdAt || '') >= `${createdFrom}T00:00:00.000Z`);
+    if (createdTo) list = list.filter(p => (p.createdAt || '') <= `${createdTo}T23:59:59.999Z`);
     if (advStock) { const m = advStock.match(/^([<>=!]+)\s*(\d+)/); if (m) { const [, op, val] = m; const n = Number(val); if (op === '<') list = list.filter(p => p.stock < n); if (op === '>') list = list.filter(p => p.stock > n); if (op === '<=') list = list.filter(p => p.stock <= n); if (op === '>=') list = list.filter(p => p.stock >= n); if (op === '=' || op === '==') list = list.filter(p => p.stock === n); } }
     if (advPrice) { const m = advPrice.match(/^([<>=!]+)\s*(\d+)/); if (m) { const [, op, val] = m; const n = Number(val); if (op === '<') list = list.filter(p => p.sellPrice < n); if (op === '>') list = list.filter(p => p.sellPrice > n); if (op === '<=') list = list.filter(p => p.sellPrice <= n); if (op === '>=') list = list.filter(p => p.sellPrice >= n); if (op === '=' || op === '==') list = list.filter(p => p.sellPrice === n); } }
     list.sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : sort === 'stock' ? a.stock - b.stock : sort === 'price' ? b.sellPrice - a.sellPrice : sort === 'buy' ? b.buyPrice - a.buyPrice : sort === 'expiry' ? (a.expiry || '9999').localeCompare(b.expiry || '9999') : sort === 'margin' ? (b.sellPrice - b.buyPrice) - (a.sellPrice - a.buyPrice) : 0);
     return list;
-  }, [products, search, catFilter, filter, advStock, advPrice, sort]);
+  }, [products, search, catFilter, filter, createdFrom, createdTo, advStock, advPrice, sort]);
 
   const cats = useMemo(() => [...new Set(products.map(p => p.category || 'Divers'))].sort(), [products]);
 
@@ -545,6 +627,9 @@ export default function Products() {
             🔧 Filtres avancés {showAdv ? '▲' : '▼'}
           </button>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button onClick={() => setShowShoppingList(true)} style={{ background: D.greenLt, border: `1.5px solid ${D.greenBd}`, borderRadius: D.Rs, padding: '8px 14px', color: D.green, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              Liste courses IA
+            </button>
             <button onClick={() => setShowCamera(true)} style={{ background: `linear-gradient(135deg,${D.violet},${D.pink})`, border: 'none', borderRadius: D.Rs, padding: '8px 18px', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', boxShadow: `0 4px 12px ${D.violet}40`, display: 'flex', alignItems: 'center', gap: 6 }}>
               📸 Scanner Produit
             </button>
@@ -558,15 +643,17 @@ export default function Products() {
         </div>
 
         {showAdv && (
-          <div style={{ marginTop: 10, padding: 12, background: D.violetLt, border: `1px solid ${D.violetBd}`, borderRadius: D.Rs, display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+          <div style={{ marginTop: 10, padding: 12, background: D.violetLt, border: `1px solid ${D.violetBd}`, borderRadius: D.Rs, display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
             <Inp label="Filtre stock (ex: <5)" value={advStock} onChange={e => setAdvStock(e.target.value)} placeholder="ex: <5" color={D.amber}   D={D} />
             <Inp label="Filtre prix (ex: >500)" value={advPrice} onChange={e => setAdvPrice(e.target.value)} placeholder="ex: >500" color={D.blue} D={D} />
+            <Inp label="Cree depuis" value={createdFrom} onChange={e => setCreatedFrom(e.target.value)} type="date" color={D.green} D={D} />
+            <Inp label="Cree jusqu'a" value={createdTo} onChange={e => setCreatedTo(e.target.value)} type="date" color={D.green} D={D} />
             <Sel label="Catégorie" value={catFilter} onChange={e => setCatFilter(e.target.value)} color={D.violet} D={D}>
               <option value="">Toutes catégories</option>
               {cats.map(c => <option key={c} value={c}>{c}</option>)}
             </Sel>
             <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-              <button onClick={() => { setAdvStock(''); setAdvPrice(''); setCatFilter(''); }} style={{ flex: 1, background: D.redLt, border: `1px solid ${D.redBd}`, borderRadius: D.Rs, padding: '8px', color: D.red, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✕ Réinitialiser</button>
+              <button onClick={() => { setAdvStock(''); setAdvPrice(''); setCreatedFrom(''); setCreatedTo(''); setCatFilter(''); }} style={{ flex: 1, background: D.redLt, border: `1px solid ${D.redBd}`, borderRadius: D.Rs, padding: '8px', color: D.red, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✕ Réinitialiser</button>
             </div>
           </div>
         )}
@@ -595,6 +682,36 @@ export default function Products() {
       {/* ══ VUE INVENTAIRE ══ */}
       {view === 'inventaire' && (
         <div style={{ flex: 1, overflow: 'auto', padding: '0 14px 14px' }}>
+          <G D={D} ac={D.green} style={{ padding: 14, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap' }}>
+              <Inp label="Analyse ventes depuis" value={inventoryFrom} onChange={e => setInventoryFrom(e.target.value)} type="date" color={D.green} D={D} />
+              <Inp label="Jusqu'a" value={inventoryTo} onChange={e => setInventoryTo(e.target.value)} type="date" color={D.green} D={D} />
+              {[
+                { l: 'Quantite vendue', v: inventoryPeriod.qty, c: D.blue },
+                { l: 'CA periode', v: fmt(inventoryPeriod.ca), c: D.green },
+                { l: 'Cout vendu', v: fmt(inventoryPeriod.cost), c: D.amber },
+                { l: 'Marge periode', v: fmt(inventoryPeriod.profit), c: D.violet },
+                { l: 'Retours', v: inventoryPeriod.returns, c: D.red },
+              ].map(item => (
+                <div key={item.l} style={{ minWidth: 120, background: item.c + '12', border: `1px solid ${item.c}30`, borderRadius: D.Rs, padding: '9px 12px' }}>
+                  <div style={{ fontSize: 9, color: item.c, fontWeight: 800, textTransform: 'uppercase', letterSpacing: .5 }}>{item.l}</div>
+                  <div style={{ fontSize: 15, color: item.c, fontWeight: 900, marginTop: 3 }}>{item.v}</div>
+                </div>
+              ))}
+            </div>
+            {inventoryPeriod.byProduct.length > 0 && (
+              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '2fr repeat(4,1fr)', gap: 1, overflow: 'hidden', borderRadius: D.Rs, border: `1px solid ${D.greenBd}` }}>
+                {['Produit', 'Qté', 'CA', 'Coût', 'Marge'].map(h => <div key={h} style={{ background: D.greenLt, color: D.green, fontSize: 10, fontWeight: 900, padding: '7px 10px', textTransform: 'uppercase' }}>{h}</div>)}
+                {inventoryPeriod.byProduct.slice(0, 8).flatMap(row => [
+                  <div key={`${row.name}-n`} style={{ background: D.white, color: D.txt, fontSize: 12, fontWeight: 700, padding: '7px 10px' }}>{row.name}</div>,
+                  <div key={`${row.name}-q`} style={{ background: D.white, color: D.blue, fontSize: 12, fontWeight: 800, padding: '7px 10px' }}>{row.qty}</div>,
+                  <div key={`${row.name}-ca`} style={{ background: D.white, color: D.green, fontSize: 12, fontWeight: 800, padding: '7px 10px' }}>{fmt(row.ca)}</div>,
+                  <div key={`${row.name}-co`} style={{ background: D.white, color: D.amber, fontSize: 12, fontWeight: 800, padding: '7px 10px' }}>{fmt(row.cost)}</div>,
+                  <div key={`${row.name}-m`} style={{ background: D.white, color: row.profit >= 0 ? D.violet : D.red, fontSize: 12, fontWeight: 900, padding: '7px 10px' }}>{fmt(row.profit)}</div>,
+                ])}
+              </div>
+            )}
+          </G>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
             {Object.entries(inventory.byCat).sort((a, b) => b[1].valVente - a[1].valVente).map(([cat, data]) => (
               <G key={cat} D={D} ac={D.blue} style={{ padding: 16 }}>
@@ -630,7 +747,7 @@ export default function Products() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: D.blue + '18' }}>
-                  {['', 'Réf', 'Code-barres', 'Produit', 'Catégorie', 'Prix achat', 'Prix vente', 'Marge', 'Stock', 'Péremption', 'Statut', 'Actions'].map(h => (
+                  {['', 'Réf', 'Code-barres', 'Produit', 'Catégorie', 'Prix achat', 'Prix vente', 'Marge', 'Stock', 'Créé le', 'Péremption', 'Statut', 'Actions'].map(h => (
                     <th key={h} style={{ padding: '10px 12px', fontSize: 10, fontWeight: 800, color: D.indigo, textTransform: 'uppercase', letterSpacing: .7, textAlign: 'left', whiteSpace: 'nowrap', borderBottom: `2px solid ${D.indigoBd}` }}>{h}</th>
                   ))}
                 </tr>
@@ -642,7 +759,7 @@ export default function Products() {
               <tbody>
                 {filtered.map((p, i) => {
                   const low    = p.stock > 0 && p.stock <= (p.minStock || 5);
-                  const out    = p.stock === 0;
+                  const out    = p.stock <= 0;
                   const exp    = p.expiry && p.expiry < today();
                   const margin = p.buyPrice > 0 ? Math.round(((p.sellPrice - p.buyPrice) / p.buyPrice) * 100) : 0;
                   const rowBg  = i % 2 === 0 ? D.white : D.indigoLt + '60';
@@ -679,10 +796,11 @@ export default function Products() {
                           <button onClick={e => { e.stopPropagation(); adjustStock(p.id, +1); }} style={{ width: 22, height: 22, borderRadius: 6, border: `1px solid ${D.greenBd}`, background: D.greenLt, cursor: 'pointer', color: D.green, fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                         </div>
                       </td>
+                      <td style={{ padding: '9px 12px', fontSize: 11, color: D.sub }}>{formatDateTime(p.createdAt)}</td>
                       <td style={{ padding: '9px 12px', fontSize: 11, color: exp ? D.red : D.sub, fontWeight: exp ? 700 : 400 }}>{p.expiry || '—'}{exp && ' ⚠'}</td>
                       <td style={{ padding: '9px 12px' }}>
                         <span style={{ background: out ? D.redLt : low ? D.amberLt : D.greenLt, color: out ? D.red : low ? D.amber : D.green, border: `1px solid ${out ? D.redBd : low ? D.amberBd : D.greenBd}`, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>
-                          {out ? 'Rupture' : low ? 'Bas' : 'OK'}
+                          {p.stock < 0 ? 'Stock negatif' : out ? 'Rupture' : low ? 'Bas' : 'OK'}
                         </span>
                       </td>
                       <td style={{ padding: '9px 12px' }}>
@@ -695,7 +813,7 @@ export default function Products() {
                   );
                 })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={12} style={{ padding: 40, textAlign: 'center', color: D.muted, fontSize: 14 }}>Aucun produit trouvé</td></tr>
+                  <tr><td colSpan={13} style={{ padding: 40, textAlign: 'center', color: D.muted, fontSize: 14 }}>Aucun produit trouvé</td></tr>
                 )}
               </tbody>
             </table>
@@ -704,6 +822,7 @@ export default function Products() {
       )}
 
       {/* ══ MODALS ══ */}
+      {showShoppingList && <ShoppingListModal onClose={() => setShowShoppingList(false)} onSaved={load} />}
       {modal && <ProductModal product={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={() => { load(); setModal(null); }} initialData={cameraInitData} />}
 
       {confirm && (

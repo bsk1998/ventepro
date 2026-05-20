@@ -5,7 +5,7 @@ import { db, nowISO } from '../db';
 import clientAgent from '../components/ClientAgent';
 import AgentSuggestionPanel from '../components/AgentSuggestionPanel';
 
-const CEMPTY={name:'',phone:'',address:'',notes:''};
+const CEMPTY={name:'',phone:'',address:'',notes:'',creditDueDate:'',creditPolicy:'ask',loyaltyEnabled:false,loyaltyReward:'remise'};
 
 export function Clients() {
   const { theme: C } = useTheme();
@@ -39,7 +39,7 @@ export function Clients() {
   }
 
   const openAdd=()=>{setForm(CEMPTY);setModal('add');};
-  const openEdit=c=>{setForm({name:c.name,phone:c.phone||'',address:c.address||'',notes:c.notes||''});setModal(c);};
+  const openEdit=c=>{setForm({name:c.name,phone:c.phone||'',address:c.address||'',notes:c.notes||'',creditDueDate:c.creditDueDate||'',creditPolicy:c.creditPolicy||'ask',loyaltyEnabled:!!c.loyaltyEnabled,loyaltyReward:c.loyaltyReward||'remise'});setModal(c);};
 
   async function save(){
     if(!form.name.trim()) return alert('Nom requis');
@@ -96,6 +96,7 @@ export function Clients() {
           {filtered.map(c=>{
             const pct=c.total>0?Math.round((c.paid/c.total)*100):100;
             const done=c.totalDue<=0;
+            const overdue=c.creditDueDate&&c.creditDueDate<new Date().toISOString().slice(0,10)&&c.totalDue>0;
             return <Card key={c.id} style={{border:`1px solid ${sel===c.id?C.accent:done?C.green+'30':C.border}`,cursor:'pointer',padding:18}}
               onClick={()=>setSel(s=>s===c.id?null:c.id)}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
@@ -103,7 +104,7 @@ export function Clients() {
                   <div style={{fontWeight:800,fontSize:15,fontFamily:C.fontDisplay}}>{c.name}</div>
                   <div style={{color:C.sub,fontSize:12,marginTop:2}}>📞 {c.phone||'—'} · 📍 {c.address||'—'}</div>
                 </div>
-                <Badge color={done?'green':c.totalDue>5000?'red':'amber'}>
+                <Badge color={overdue?'red':done?'green':c.totalDue>5000?'red':'amber'}>
                   {done?'✓ Soldé':`Reste ${fmt(c.totalDue)}`}
                 </Badge>
               </div>
@@ -117,6 +118,8 @@ export function Clients() {
                     background:done?C.green:pct>60?C.accent:C.red,transition:'width .4s'}}/>
                 </div>
               </>}
+              {overdue&&<div style={{background:C.redLo,border:`1px solid ${C.red}35`,borderRadius:8,padding:'7px 10px',color:C.red,fontSize:12,fontWeight:700,marginBottom:10}}>Date paiement depassee: {new Date(c.creditDueDate).toLocaleDateString('fr-DZ')} · {c.creditPolicy==='block'?'vente bloquee':'vendeur decide'}</div>}
+              {c.loyaltyEnabled&&<div style={{background:C.greenLo,border:`1px solid ${C.green}35`,borderRadius:8,padding:'7px 10px',color:C.green,fontSize:12,fontWeight:700,marginBottom:10}}>Fidelite active · Suggestion: {c.loyaltyReward==='cadeau'?'cadeau client':c.loyaltyReward==='points'?'points fidelite':'remise prochaine vente'}</div>}
               <div style={{display:'flex',gap:8}}>
                 <button onClick={e=>{e.stopPropagation();openEdit(c);}} style={{background:C.accentLo,border:'none',borderRadius:8,padding:'5px 14px',color:C.accent,fontWeight:700,cursor:'pointer',fontSize:12}}>✏ Modifier</button>
                 {c.totalDue>0&&<button onClick={e=>{e.stopPropagation();setPayModal(c);setPayAmount('');}} style={{background:C.greenLo,border:'none',borderRadius:8,padding:'5px 14px',color:C.green,fontWeight:700,cursor:'pointer',fontSize:12}}>💳 Versement</button>}
@@ -174,6 +177,23 @@ export function Clients() {
           <Input label="Téléphone" value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="0661 23 45 67"/>
           <Input label="Adresse" value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))} placeholder="Alger Centre"/>
           <Textarea label="Notes" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
+          <Input label="Date limite paiement credit" type="date" value={form.creditDueDate} onChange={e=>setForm(f=>({...f,creditDueDate:e.target.value}))}/>
+          <label style={{fontSize:12,color:C.sub,fontWeight:700}}>Politique si retard</label>
+          <select value={form.creditPolicy} onChange={e=>setForm(f=>({...f,creditPolicy:e.target.value}))} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',color:C.text}}>
+            <option value="ask">Le vendeur decide a la caisse</option>
+            <option value="block">Bloquer la future vente</option>
+          </select>
+          <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,color:C.text,fontWeight:700}}>
+            <input type="checkbox" checked={!!form.loyaltyEnabled} onChange={e=>setForm(f=>({...f,loyaltyEnabled:e.target.checked}))}/>
+            Activer fidelite client
+          </label>
+          {form.loyaltyEnabled&&(
+            <select value={form.loyaltyReward} onChange={e=>setForm(f=>({...f,loyaltyReward:e.target.value}))} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',color:C.text}}>
+              <option value="remise">Remise sur prochaine vente</option>
+              <option value="cadeau">Cadeau apres palier</option>
+              <option value="points">Points fidelite</option>
+            </select>
+          )}
         </div>
         <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
           <Btn variant="ghost" onClick={()=>setModal(null)}>Annuler</Btn>

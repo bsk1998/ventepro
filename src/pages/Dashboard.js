@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import { getDashboardStats, fmt } from '../db';
 import financeAgent from '../components/FinanceAgent';
+import ProactiveInsightsPanel from '../components/ProactiveInsightsPanel';
 
 function Clock({ C }) {
   const [time, setTime] = useState(new Date());
@@ -21,7 +22,146 @@ function Clock({ C }) {
   );
 }
 
-function ModuleTile({ icon, title, shortcut, items, color, onClick, badge, C }) {
+const MODULE_HELP = {
+  sales: {
+    title: 'Vente',
+    actions: ['Créer une vente comptoir ou client', 'Imprimer ticket, bon de livraison et facture', 'Consulter les ventes détaillées et encaisser un versement'],
+    buttons: ['Ticket : imprime le reçu', 'B.Livraison A4 : prépare le bon de livraison', 'Facture : imprime la facture', 'Versement client : ajoute un paiement sur crédit'],
+    shortcuts: ['F1 : ouvrir Vente', 'Fin : quitter la liste détaillée', 'Ctrl+I : ouvrir l agent IA du module'],
+  },
+  products: {
+    title: 'Produits',
+    actions: ['Ajouter et modifier les produits', 'Suivre le stock et les alertes', 'Gérer les catégories, références et codes-barres'],
+    buttons: ['Ajouter : crée un produit', 'Modifier : met à jour la fiche', 'Stock : ajuste les quantités', 'Recherche : filtre rapidement le catalogue'],
+    shortcuts: ['F3 : ouvrir Produits', 'Ctrl+I : ouvrir l agent IA du module'],
+  },
+  clients: {
+    title: 'Clients',
+    actions: ['Créer les fiches clients', 'Suivre les crédits et versements', 'Retrouver l historique des achats'],
+    buttons: ['Ajouter : crée un client', 'Versement : enregistre un paiement', 'Historique : affiche les transactions', 'Recherche : retrouve une fiche'],
+    shortcuts: ['F4 : ouvrir Clients', 'Ctrl+I : ouvrir l agent IA du module'],
+  },
+  suppliers: {
+    title: 'Fournisseurs / Achat',
+    actions: ['Gérer les fournisseurs', 'Suivre les achats et créances', 'Mettre à jour le stock depuis les entrées'],
+    buttons: ['Achat : crée une entrée fournisseur', 'Versement : enregistre un règlement', 'Suivi : consulte les dettes et paiements'],
+    shortcuts: ['F2 : ouvrir Achat', 'F5 : ouvrir Fournisseurs', 'Ctrl+I : ouvrir l agent IA du module'],
+  },
+  treasury: {
+    title: 'Entrée / Sortie',
+    actions: ['Enregistrer les dépenses', 'Analyser caisse, bénéfice et sorties', 'Contrôler les mouvements financiers'],
+    buttons: ['Dépense : ajoute une sortie', 'Rapport : synthétise la période', 'Filtre : cible une date ou catégorie'],
+    shortcuts: ['F6 : ouvrir Entrée / Sortie', 'Ctrl+I : ouvrir l agent Finance'],
+  },
+  reports: {
+    title: 'Statistiques',
+    actions: ['Analyser le chiffre d affaires', 'Identifier les meilleurs produits et clients', 'Comparer les périodes'],
+    buttons: ['Période : change l intervalle', 'Top produits : classe les articles', 'Top clients : classe les clients'],
+    shortcuts: ['F7 : ouvrir Statistiques', 'Ctrl+I : ouvrir l agent IA'],
+  },
+  settings: {
+    title: 'Paramètres',
+    actions: ['Configurer les informations société', 'Sauvegarder et restaurer les données', 'Adapter thème et affichage'],
+    buttons: ['Sauvegarder : exporte les données', 'Importer : restaure une sauvegarde', 'Thème : change le mode clair/sombre'],
+    shortcuts: ['F9 : ouvrir Paramètres'],
+  },
+  employees: {
+    title: 'Employés',
+    actions: ['Gérer les membres de l équipe', 'Suivre les performances vendeurs', 'Enregistrer les salaires'],
+    buttons: ['Ajouter : crée un employé', 'Actif : active ou désactive un compte', 'Salaire : enregistre un paiement'],
+    shortcuts: ['F8 : ouvrir Employés'],
+  },
+};
+
+const NORMALIZED_MODULE_HELP = {
+  sales: {
+    title: 'Vente',
+    actions: ['Creer une vente comptoir ou client', 'Rechercher par nom, code-barres ou categorie', 'Imprimer ticket, bon de livraison, facture ou proforma', 'Consulter les ventes et encaisser les credits'],
+    buttons: ['+ Nouveau : cree un produit depuis la caisse', '+ Ajouter : ajoute le produit au panier', 'Valider : confirme la vente avec paiement', 'Liste ventes : ouvre l historique detaille', 'Versement client : encaisse un paiement sur credit'],
+    shortcuts: ['F1 : ouvrir Vente', 'F8 : valider une vente', 'Ctrl+I : ouvrir l agent IA du module'],
+  },
+  products: {
+    title: 'Produits',
+    actions: ['Ajouter et modifier les produits', 'Suivre stock, alertes, marges et dates de creation', 'Gerer categories, references et codes-barres'],
+    buttons: ['Ajouter : cree un produit', 'Modifier : met a jour la fiche', 'Stock : ajuste les quantites', 'Filtres : trie par categorie, date ou niveau de stock'],
+    shortcuts: ['F3 : ouvrir Produits', 'Ctrl+I : ouvrir l agent Stock'],
+  },
+  clients: {
+    title: 'Clients',
+    actions: ['Creer les fiches clients', 'Suivre credits et versements', 'Retrouver l historique des achats'],
+    buttons: ['Ajouter : cree un client', 'Versement : enregistre un paiement', 'Historique : affiche les transactions', 'Recherche : retrouve une fiche'],
+    shortcuts: ['F4 : ouvrir Clients', 'Ctrl+I : ouvrir l agent Clients'],
+  },
+  suppliers: {
+    title: 'Fournisseurs / Achat',
+    actions: ['Gerer les fournisseurs', 'Suivre achats, dettes et paiements', 'Mettre a jour le stock depuis les entrees'],
+    buttons: ['Achat : cree une entree fournisseur', 'Versement : enregistre un reglement', 'Suivi : consulte les dettes et paiements'],
+    shortcuts: ['F2 : ouvrir Achat', 'F5 : ouvrir Fournisseurs', 'Ctrl+I : ouvrir l assistant IA'],
+  },
+  treasury: {
+    title: 'Entree / Sortie',
+    actions: ['Enregistrer les depenses', 'Analyser caisse, benefice et sorties', 'Controler les mouvements financiers'],
+    buttons: ['Depense : ajoute une sortie', 'Rapport : synthetise la periode', 'Filtre : cible une date ou categorie'],
+    shortcuts: ['F6 : ouvrir Entree / Sortie', 'Ctrl+I : ouvrir l agent Finance'],
+  },
+  reports: {
+    title: 'Statistiques',
+    actions: ['Analyser le chiffre d affaires', 'Identifier les meilleurs produits et clients', 'Comparer les periodes'],
+    buttons: ['Periode : change l intervalle', 'Top produits : classe les articles', 'Top clients : classe les clients'],
+    shortcuts: ['F7 : ouvrir Statistiques', 'Ctrl+I : ouvrir l agent Finance'],
+  },
+  settings: {
+    title: 'Parametres',
+    actions: ['Configurer les informations societe', 'Sauvegarder et restaurer les donnees', 'Adapter theme et affichage'],
+    buttons: ['Sauvegarder : exporte les donnees', 'Importer : restaure une sauvegarde', 'Theme : change le mode clair ou sombre'],
+    shortcuts: ['F9 : ouvrir Parametres'],
+  },
+  employees: {
+    title: 'Employes',
+    actions: ['Gerer les membres de l equipe', 'Suivre les performances vendeurs', 'Enregistrer les salaires'],
+    buttons: ['Ajouter : cree un employe', 'Actif : active ou desactive un compte', 'Salaire : enregistre un paiement'],
+    shortcuts: ['F8 : ouvrir Employes'],
+  },
+};
+
+function ModuleHelpModal({ module, onClose, C }) {
+  if (!module) return null;
+  const sections = [
+    ['Actions principales', module.actions],
+    ['Boutons', module.buttons],
+    ['Raccourcis', module.shortcuts],
+  ];
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,.42)',
+      display:'flex', alignItems:'center', justifyContent:'center', padding:20,
+    }}>
+      <div onClick={e=>e.stopPropagation()} style={{
+        width:420, maxWidth:'100%', background:C.surface, color:C.text,
+        border:`1.5px solid ${C.accent}`, borderRadius:12, boxShadow:C.shadow,
+        padding:18,
+      }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:12 }}>
+          <div style={{ fontSize:16, fontWeight:900, color:C.text }}>Aide - {module.title}</div>
+          <button onClick={onClose} style={{
+            border:'none', background:C.redLo, color:C.red, borderRadius:8,
+            width:30, height:30, cursor:'pointer', fontWeight:900,
+          }}>x</button>
+        </div>
+        {sections.map(([title, items]) => (
+          <div key={title} style={{ marginTop:12 }}>
+            <div style={{ fontSize:10, fontWeight:900, color:C.accent, textTransform:'uppercase', letterSpacing:.8, marginBottom:6 }}>{title}</div>
+            {items.map((item, i) => (
+              <div key={i} style={{ fontSize:12, color:C.text, padding:'4px 0', borderBottom:`1px solid ${C.border}` }}>{item}</div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModuleTile({ icon, title, shortcut, items, color, onClick, badge, C, help, onHelp }) {
   const [hover, setHover] = useState(false);
   const tileBg    = hover ? color : color + (C.isLight ? '18' : '22');
   const textColor  = hover ? '#fff' : C.text;
@@ -41,6 +181,21 @@ function ModuleTile({ icon, title, shortcut, items, color, onClick, badge, C }) 
           background: C.red, color: '#fff', borderRadius: 20,
           fontSize: 10, fontWeight: 900, padding: '3px 8px',
           border: `2px solid ${C.surface}` }}>{badge}</div>
+      )}
+      {help && (
+        <button
+          type="button"
+          title={`Aide ${title}`}
+          onClick={e => { e.stopPropagation(); onHelp(help); }}
+          style={{
+            position:'absolute', top:8, right:8, width:26, height:26,
+            border:`1px solid ${hover ? 'rgba(255,255,255,.45)' : color + '70'}`,
+            borderRadius:10, background:hover ? 'rgba(255,255,255,.18)' : C.surface,
+            color:hover ? '#fff' : color, cursor:'help', fontWeight:900,
+            fontSize:13, lineHeight:1,
+          }}>
+          ?
+        </button>
       )}
       <div style={{ display: 'flex', gap: 14 }}>
         <div style={{
@@ -80,6 +235,7 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
   const { theme: C, metier } = useTheme();
   const [stats,       setStats]       = useState(null);
   const [reportAlert, setReportAlert] = useState([]);
+  const [helpModule,  setHelpModule]  = useState(null);
 
   useEffect(() => {
     getDashboardStats().then(setStats).catch(console.error);
@@ -123,6 +279,7 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden', fontFamily: C.fontBody }}>
+      <ModuleHelpModal module={helpModule} C={C} onClose={() => setHelpModule(null)} />
 
       {/* ── HEADER ── */}
       <div style={{ background: C.surface, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: `2px solid ${C.border}` }}>
@@ -199,9 +356,11 @@ export default function Dashboard({ onNavigate, user, isAdmin, onOpenAI }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 15, marginBottom: 20 }}>
             {MODULES.map((m, i) => (
-              <ModuleTile key={i} {...m} C={C} onClick={() => onNavigate(m.page)} />
+              <ModuleTile key={i} {...m} help={m.help || NORMALIZED_MODULE_HELP[m.page]} C={C} onHelp={setHelpModule} onClick={() => onNavigate(m.page)} />
             ))}
           </div>
+
+          <ProactiveInsightsPanel compact onOpenAI={onOpenAI} />
 
           {/* Bouton Vente Rapide */}
           <div

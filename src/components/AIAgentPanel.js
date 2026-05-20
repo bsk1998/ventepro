@@ -4,6 +4,7 @@ import { db, fmt, nowISO } from '../db';
 import stockAgent from './StockAgent';
 import financeAgent from './FinanceAgent';
 import clientAgent from './ClientAgent';
+import { buildShoppingCandidates, createShoppingList } from '../businessFeatures';
 
 // ════════════════════════════════════════════════════════════════════════════
 // AGENTS V2 — Prompts enrichis, suggestions contextuelles
@@ -199,6 +200,39 @@ const AGENTS_EMPLOYEE = [
   },
 ];
 
+const AGENT_ACTIONS = {
+  stock: [
+    { id: 'stock-order', label: 'Plan commande', desc: 'Ruptures, stock bas et quantites conseillees.', command: 'Que commander cette semaine ?' },
+    { id: 'stock-margin', label: 'Prix a corriger', desc: 'Articles a faible marge avec prix conseille.', command: 'Produits a faible marge' },
+    { id: 'stock-value', label: 'Valeur stock', desc: 'Stock immobilise et priorites de rotation.', command: 'Valeur totale du stock' },
+  ],
+  sales: [
+    { id: 'sales-last', label: 'Derniere vente', desc: 'Client, vendeur, versement et articles.', command: 'Details derniere vente' },
+    { id: 'sales-top', label: 'Top produits', desc: 'Produits qui tirent le chiffre d affaires.', command: 'Top produits du mois' },
+    { id: 'sales-debt', label: 'Credits ouverts', desc: 'Impayes clients a traiter.', command: 'Impayes clients' },
+    { id: 'sales-validate', label: 'Valider panier', desc: 'Ouvre la validation dans le module Vente.', command: 'Valide la vente', requiresModule: true },
+  ],
+  clients: [
+    { id: 'client-debt', label: 'Relances', desc: 'Debiteurs classes par montant restant.', command: 'Liste des debiteurs' },
+    { id: 'client-vip', label: 'Clients VIP', desc: 'Meilleurs clients et potentiel commercial.', command: 'Clients VIP' },
+    { id: 'client-plan', label: 'Plan recouvrement', desc: 'Priorites de relance cette semaine.', command: 'Plan de relance cette semaine' },
+  ],
+  finance: [
+    { id: 'finance-month', label: 'Bilan du mois', desc: 'CA, encaissements, credits, benefice.', command: 'Bilan du mois' },
+    { id: 'finance-zakat', label: 'Zakat', desc: 'Estimation locale basee sur stock et credits.', command: 'Calculer la Zakat' },
+    { id: 'finance-exp', label: 'Charges', desc: 'Depenses par categorie.', command: 'Depenses par categorie' },
+  ],
+  hr: [
+    { id: 'hr-sellers', label: 'Vendeurs', desc: 'Classement CA par vendeur.', command: 'Ventes par vendeur' },
+    { id: 'hr-team', label: 'Equipe', desc: 'Masse salariale et performance.', command: 'Performance par employe' },
+  ],
+  assistant: [
+    { id: 'assistant-day', label: 'Diagnostic complet', desc: 'Stock, ventes, clients et finance en une vue.', command: 'Diagnostic complet' },
+    { id: 'assistant-plan', label: 'Plan action', desc: 'Actions concretes a faire maintenant.', command: 'Plan d action cette semaine' },
+    { id: 'assistant-help', label: 'Commandes', desc: 'Ce que l IA peut executer.', command: 'Aide commandes' },
+  ],
+};
+
 // ════════════════════════════════════════════════════════════════════════════
 // CHARGEMENT DONNÉES ENRICHI
 // ════════════════════════════════════════════════════════════════════════════
@@ -335,6 +369,23 @@ function extractAmount(text) {
   return match ? Number(match[1].replace(/\s|\./g, '').replace(',', '.')) || 0 : 0;
 }
 
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = new Array(b.length + 1);
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
 function extractPhone(text) {
   return String(text || '').match(/(?:\+?213|0)(?:[\s.-]?\d){8,9}/)?.[0]?.trim() || '';
 }
@@ -364,12 +415,42 @@ function findByName(list, text, fields = ['name']) {
     .map(item => {
       const haystack = fields.map(f => normalizeText(item[f])).join(' ');
       const name = normalizeText(item.name || item.clientName || item.label);
-      const tokenScore = name.split(' ').filter(w => w.length > 2 && q.includes(w)).length * 10;
-      const score = haystack && q.includes(haystack) ? 1000 + haystack.length : tokenScore + name.length / 100;
+      const haystackTokens = haystack.split(' ').filter(Boolean);
+      const queryTokens = q.split(' ').filter(Boolean);
+      const tokenHits = name.split(' ').filter(w => w.length > 2 && queryTokens.includes(w)).length;
+      const bestDistance = haystackTokens.reduce((best, token) => {
+        if (token.length < 2) return best;
+        const localBest = queryTokens.reduce((min, qToken) => Math.min(min, levenshtein(token, qToken)), Infinity);
+        return Math.min(best, localBest);
+      }, Infinity);
+      const normalizedDistance = Number.isFinite(bestDistance) ? bestDistance / Math.max(name.length, 1) : 1;
+      const exactScore = haystack && q.includes(haystack) ? 1000 + haystack.length : 0;
+      const fuzzyScore = normalizedDistance <= 0.35 ? Math.max(0, 20 - normalizedDistance * 100) : 0;
+      const score = exactScore || (tokenHits ? tokenHits * 25 : 0) + fuzzyScore;
       return { item, score };
     })
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score)[0]?.item || null;
+}
+
+function productHistoryReport(product) {
+  const stockRows = (product.stockHistory || []).slice().reverse().slice(0, 8);
+  const editRows = (product.modificationHistory || []).slice().reverse().slice(0, 6);
+  const lines = [
+    `## Produit: ${product.name}`,
+    `Stock actuel: **${product.stock || 0} ${product.unit || 'pce'}**`,
+    `Prix vente: **${fmt(product.sellPrice || 0)}**`,
+    `Code-barres: **${product.barcode || 'non renseigne'}**`,
+    `Cree le: **${product.createdAt ? new Date(product.createdAt).toLocaleString('fr-DZ') : 'inconnu'}**`,
+    `Modifie le: **${product.updatedAt ? new Date(product.updatedAt).toLocaleString('fr-DZ') : 'jamais'}**`,
+    '',
+    '## Changements de stock',
+    ...(stockRows.length ? stockRows.map(h => `- ${h.at ? new Date(h.at).toLocaleString('fr-DZ') : ''}: ${h.before} -> ${h.after} (${Number(h.delta || 0) > 0 ? '+' : ''}${h.delta}) ${h.note || ''}`) : ['- Aucun changement enregistre.']),
+    '',
+    '## Modifications produit',
+    ...(editRows.length ? editRows.map(h => `- ${h.at ? new Date(h.at).toLocaleString('fr-DZ') : ''}: ${h.source || 'modification'}`) : ['- Aucune modification enregistree.']),
+  ];
+  return lines.join('\n');
 }
 
 function agentHelp(agentId, hasModuleActions) {
@@ -380,6 +461,7 @@ function agentHelp(agentId, hasModuleActions) {
   if (agentId === 'sales') {
     return [...common,
       '- `ajoute 2 huile 5w30`',
+      '- `retourne 2 huile 5w30`',
       '- `applique une remise de 500`',
       hasModuleActions ? '- `valide la vente`' : '- Ouvrez-moi depuis le module Vente pour modifier le panier actif',
       '- `details vente VP-12`',
@@ -462,6 +544,47 @@ function debtorsReport(data) {
   if (!debtors.length) return '## Credits clients\nAucun debiteur.';
   const total = debtors.reduce((sum, c) => sum + Number(c.dette || c.totalDue || 0), 0);
   return ['## Debiteurs prioritaires', `Total affiche: **${fmt(total)}**`, ...debtors.map((c, i) => `${i + 1}. **${c.name}** - ${fmt(c.dette || c.totalDue)} ${c.phone ? `(${c.phone})` : ''}`)].join('\n');
+}
+
+function businessPilotReport(data) {
+  const products = data.products || [];
+  const sales = data.sales || [];
+  const clients = data.clients || [];
+  const expenses = data.expenses || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const todaySales = sales.filter(s => s.createdAt?.startsWith(today));
+  const caToday = todaySales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const credits = clients
+    .filter(c => Number(c.dette || c.totalDue || 0) > 0)
+    .sort((a, b) => Number(b.dette || b.totalDue || 0) - Number(a.dette || a.totalDue || 0));
+  const stockCritical = products.filter(p => Number(p.stock || 0) <= 0);
+  const stockLow = products.filter(p => Number(p.stock || 0) > 0 && Number(p.stock || 0) <= Number(p.minStock || 5));
+  const lowMargin = products
+    .map(p => ({ p, margin: Number(p.buyPrice || 0) > 0 ? ((Number(p.sellPrice || 0) - Number(p.buyPrice || 0)) / Number(p.buyPrice || 0)) * 100 : null }))
+    .filter(row => row.margin !== null && row.margin < 15)
+    .sort((a, b) => a.margin - b.margin);
+  const monthExpenses = expenses
+    .filter(e => e.createdAt?.startsWith(new Date().toISOString().slice(0, 7)))
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const actions = [];
+  if (stockCritical.length) actions.push(`Commander en urgence: **${stockCritical.slice(0, 3).map(p => p.name).join(', ')}**.`);
+  if (stockLow.length) actions.push(`Verifier stock bas: **${stockLow.slice(0, 3).map(p => p.name).join(', ')}**.`);
+  if (credits.length) actions.push(`Relancer d'abord **${credits[0].name}** pour **${fmt(credits[0].dette || credits[0].totalDue)}**.`);
+  if (lowMargin.length) actions.push(`Corriger les prix faibles: **${lowMargin.slice(0, 3).map(row => row.p.name).join(', ')}**.`);
+  if (!todaySales.length) actions.push('Aucune vente aujourd hui: verifier caisse, ouvrir une action commerciale ou saisir les tickets manquants.');
+
+  return [
+    '## Diagnostic IA executif',
+    `CA aujourd hui: **${fmt(caToday)}**`,
+    `Ventes aujourd hui: **${todaySales.length}**`,
+    `Ruptures: **${stockCritical.length}** | Stock bas: **${stockLow.length}**`,
+    `Clients a relancer: **${credits.length}**`,
+    `Depenses du mois: **${fmt(monthExpenses)}**`,
+    '',
+    '## Actions recommandees',
+    ...(actions.length ? actions.map((a, i) => `${i + 1}. ${a}`) : ['1. Situation stable. Continuer le suivi ventes, stock et credits.']),
+  ].join('\n');
 }
 
 function clientDetailsReport(client, data) {
@@ -555,6 +678,10 @@ async function executeLocalAgentCommand({ agentId, question, data, userRole, mod
     return { handled: true, reply: agentHelp(agentId, !!moduleActions) };
   }
 
+  if (/(diagnostic|resume complet|pilotage|plan d action|actions? a faire|revolutionnaire|priorite)/.test(q)) {
+    return { handled: true, reply: businessPilotReport(data) };
+  }
+
   if (agentId === 'sales') {
     if (/(top|meilleur|classement).*(produit|article)|produit.*(vendu|top|meilleur)/.test(q)) {
       return { handled: true, reply: topProductsReport(data, /(aujourd|jour)/.test(q) ? 'today' : 'month') };
@@ -564,6 +691,16 @@ async function executeLocalAgentCommand({ agentId, question, data, userRole, mod
     }
     if (/(impaye|credit|debiteur|reste a payer)/.test(q)) {
       return { handled: true, reply: debtorsReport(data) };
+    }
+    if (/(retour|retourne|reprend|rends)/.test(q)) {
+      const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
+      if (!product) return { handled: true, reply: "## Agent Ventes\nJe n'ai pas trouve le produit a retourner. Donnez le nom ou la reference." };
+      const qty = -Math.abs(extractQty(question));
+      if (moduleActions?.addProductToCart) {
+        await moduleActions.addProductToCart(product, qty);
+        return { handled: true, reply: `## Retour ajoute\nJ'ai ajoute **${qty} x ${product.name}** au panier.` };
+      }
+      return { handled: true, reply: "## Action impossible ici\nOuvrez l'agent depuis le module Vente pour modifier le panier actif." };
     }
     if (/(ajoute|mets|vend|vends)/.test(q)) {
       const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
@@ -596,13 +733,32 @@ async function executeLocalAgentCommand({ agentId, question, data, userRole, mod
   }
 
   if (agentId === 'stock') {
+    if (/(historique|info|information|fiche|date|creation|modification|changement).*(produit|stock)|produit.*(historique|info|date|modification|changement)/.test(q)) {
+      const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
+      if (!product) return { handled: true, reply: "## Agent Stock\nProduit introuvable. Donnez le nom, la reference ou le code-barres." };
+      return { handled: true, reply: productHistoryReport(product) };
+    }
+    if (/(liste.*course|courses|commande ia|liste achat|panier achat)/.test(q)) {
+      if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut creer une liste de courses." };
+      const mode = /(zero|rupture|epuise)/.test(q) ? 'zero' : /(alerte|minimum|stock bas|reappro)/.test(q) ? 'alerts' : 'prompt';
+      const items = await buildShoppingCandidates({ mode, prompt: question });
+      if (!items.length) return { handled: true, reply: "## Liste de courses IA\nAucun produit pertinent trouve pour cette demande." };
+      const listId = await createShoppingList({ title: 'Liste IA - ' + new Date().toLocaleDateString('fr-DZ'), source: 'chat-stock', items });
+      const total = items.reduce((s, i) => s + Number(i.estimatedTotal || 0), 0);
+      return { handled: true, reply: [`## Liste de courses IA creee`, `ID: **${listId}**`, `Total estime: **${fmt(total)}**`, ...items.slice(0, 8).map(i => `- **${i.productName}**: ${i.qty} x ${fmt(i.buyPrice)} (${i.reason})`)].join('\n') };
+    }
     if (/(stock).*(met|change|modifier|fixe|ajuste)|(?:met|change|modifier|fixe|ajuste).*(stock)/.test(q)) {
       if (!canWrite) return { handled: true, reply: "## Acces limite\nSeul un administrateur peut modifier le stock." };
       const product = findByName(data.products, q, ['name', 'ref', 'barcode', 'category']);
       const amount = extractAmount(question);
       if (!product && !amount) return { handled: true, reply: '## Agent Stock\nPrecisez le produit et la quantite. Exemple: `mets le stock de Bougie NGK a 40`.' };
       if (!product) return { handled: true, reply: "## Agent Stock\nProduit introuvable. Donnez le nom ou la reference." };
-      await db.products.update(product.id, { stock: amount, updatedAt: nowISO(), updatedByAgent: 'stock' });
+      await db.products.update(product.id, {
+        stock: amount,
+        updatedAt: nowISO(),
+        updatedByAgent: 'stock',
+        stockHistory: [...(product.stockHistory || []), { at: nowISO(), before: Number(product.stock || 0), after: amount, delta: amount - Number(product.stock || 0), source: 'agent_stock', note: 'Stock fixe par IA' }],
+      });
       return { handled: true, reply: `## Action executee\nStock de **${product.name}** mis a **${amount} ${product.unit || 'pce'}**.` };
     }
     if (/(augmente|ajoute|recois|reception).*(stock)|stock.*(augmente|ajoute|recois|reception)/.test(q)) {
@@ -611,7 +767,12 @@ async function executeLocalAgentCommand({ agentId, question, data, userRole, mod
       const amount = extractAmount(question);
       if (!product || !amount) return { handled: true, reply: '## Agent Stock\nExemple: `augmente stock Filtre a Air de 10`.' };
       const next = Number(product.stock || 0) + amount;
-      await db.products.update(product.id, { stock: next, updatedAt: nowISO(), updatedByAgent: 'stock' });
+      await db.products.update(product.id, {
+        stock: next,
+        updatedAt: nowISO(),
+        updatedByAgent: 'stock',
+        stockHistory: [...(product.stockHistory || []), { at: nowISO(), before: Number(product.stock || 0), after: next, delta: amount, source: 'agent_stock', note: 'Stock augmente par IA' }],
+      });
       return { handled: true, reply: `## Action executee\nStock de **${product.name}** augmente de **${amount}**. Nouveau stock: **${next} ${product.unit || 'pce'}**.` };
     }
     if (/(prix|tarif).*(met|change|modifier|fixe|applique)|(?:met|change|modifier|fixe).*(prix|tarif)/.test(q)) {
@@ -857,6 +1018,7 @@ export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgent
     text: `## Bonjour ! Je suis votre ${activeAgent.name}\n\n${activeAgent.tagline}\n\nJe suis connecté à vos données en temps réel. Que puis-je analyser pour vous ?`,
     time: getTime(),
   }];
+  const activeActions = AGENT_ACTIONS[activeAgent.id] || [];
 
   async function simulateStream(fullText, agentId, baseHistory) {
     const words = fullText.split(' ');
@@ -1123,6 +1285,43 @@ export default function AIAgentPanel({ onClose, userRole = 'admin', defaultAgent
                 <Chip label={streaming ? '✍️ Rédaction...' : '🔍 Analyse...'} color={activeAgent.color} pulse />
               )}
             </div>
+          </div>
+
+          {/* Centre d'actions */}
+          <div style={{
+            padding: '10px 16px',
+            borderBottom: `1px solid ${bd}`,
+            background: isLight ? '#FFFFFF' : '#090B14',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
+            gap: 8,
+          }}>
+            {activeActions.map(action => {
+              const disabled = loading || streaming || (action.requiresModule && !moduleActions);
+              return (
+                <button key={action.id} disabled={disabled} onClick={() => send(action.command)}
+                  title={action.requiresModule && !moduleActions ? 'Disponible depuis le module concerne' : action.command}
+                  style={{
+                    textAlign: 'left',
+                    border: `1.5px solid ${disabled ? bd : activeAgent.color + '35'}`,
+                    background: disabled ? (isLight ? '#F8FAFC' : '#0F1320') : activeAgent.color + '10',
+                    borderRadius: 12,
+                    padding: '9px 10px',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.55 : 1,
+                    minHeight: 66,
+                  }}
+                  onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = activeAgent.color + '18'; }}
+                  onMouseLeave={e => { if (!disabled) e.currentTarget.style.background = activeAgent.color + '10'; }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 900, color: disabled ? (isLight ? '#94A3B8' : '#3A4260') : activeAgent.color, marginBottom: 4 }}>
+                    {action.label}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: isLight ? '#64748B' : '#7A849D', lineHeight: 1.35 }}>
+                    {disabled && action.requiresModule ? 'Ouvrir depuis le module.' : action.desc}
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* Messages */}

@@ -251,9 +251,6 @@ export class SalesAgent {
       for (const item of items) {
         const product = await db.products.get(item.id);
         if (!product) throw new Error(`Produit introuvable: ${item.name}`);
-        if (toNumber(item.qty) > 0 && toNumber(product.stock) < toNumber(item.qty)) {
-          throw new Error(`Stock insuffisant pour ${product.name}: ${product.stock} ${product.unit || 'pce'}`);
-        }
       }
 
       const saleId = await db.sales.add({
@@ -276,6 +273,17 @@ export class SalesAgent {
 
       for (const item of items) {
         const product = await db.products.get(item.id);
+        const beforeStock = toNumber(product.stock);
+        const afterStock = beforeStock - toNumber(item.qty);
+        const stockHistory = [...(product.stockHistory || []), {
+          at: nowISO(),
+          before: beforeStock,
+          after: afterStock,
+          delta: -toNumber(item.qty),
+          source: 'vente',
+          saleId,
+          note: afterStock < 0 ? 'Vente acceptee avec stock negatif' : 'Vente',
+        }];
         await db.saleItems.add({
           saleId,
           productId: item.id,
@@ -287,7 +295,8 @@ export class SalesAgent {
           createdAt: nowISO(),
         });
         await db.products.update(item.id, {
-          stock: toNumber(product.stock) - toNumber(item.qty),
+          stock: afterStock,
+          stockHistory,
           updatedAt: nowISO(),
         });
       }
@@ -297,7 +306,7 @@ export class SalesAgent {
           clientId: client.id,
           saleId,
           amount: toNumber(payment.paid),
-          note: payment.status === 'credit' ? 'Acompte vente' : 'Paiement vente',
+          note: payment.status === 'crédit' ? 'Acompte vente' : 'Paiement vente',
           createdAt: nowISO(),
         }).catch(() => {});
       }

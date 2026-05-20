@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../db';
+import { isPasswordHash, serializePassword, verifyPassword } from '../security';
 
 // FIX AUDIT #3 : les mots de passe par défaut sont toujours là,
 // MAIS Login.js lit maintenant db.settings au démarrage.
@@ -83,14 +84,14 @@ export default function Login({ onLogin }) {
 
         if (map.shop_name) setShopName(map.shop_name);
 
-        // Construire la liste d'utilisateurs avec mots de passe DB ou défaut
+        // Construire la liste d'utilisateurs avec hash DB ou défaut
         setUsers(DEFAULT_USERS.map(u => ({
           ...u,
-          password: map[u.settingKey]?.trim() || u.defaultPwd,
+          passwordRecord: map[u.settingKey] || '',
         })));
       } catch {
         // DB pas encore prête → utiliser les valeurs par défaut
-        setUsers(DEFAULT_USERS.map(u => ({ ...u, password: u.defaultPwd })));
+        setUsers(DEFAULT_USERS.map(u => ({ ...u, passwordRecord: '' })));
       }
     })();
 
@@ -107,8 +108,18 @@ export default function Login({ onLogin }) {
     setLoading(true); setError('');
     await new Promise(r => setTimeout(r, 1200));
 
-    const match = users.find(u => u.username === profile.username && u.password === password);
+    const candidates = users.filter(u => u.username === profile.username);
+    let match = null;
+    for (const candidate of candidates) {
+      if (await verifyPassword(password, candidate.passwordRecord, candidate.defaultPwd)) {
+        match = candidate;
+        break;
+      }
+    }
     if (match) {
+      if (!isPasswordHash(match.passwordRecord)) {
+        await db.settings.put({ key: match.settingKey, value: await serializePassword(password) });
+      }
       onLogin({ name: match.name, role: match.role, id: null });
     } else {
       setError('Mot de passe incorrect');

@@ -74,7 +74,7 @@ export class ClientAgent {
   async recordPayment(clientId, amount, note = 'Versement Agent Clients') {
     const creditSales = await db.sales.where('clientId').equals(clientId).toArray();
     const openSales = creditSales
-      .filter(s => s.status === 'credit' || s.status === 'crÃ©dit')
+      .filter(s => s.status === 'credit' || s.status === 'crédit' || s.status === 'crÃ©dit')
       .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
 
     let remaining = toNumber(amount);
@@ -85,7 +85,7 @@ export class ClientAgent {
       const newPaid = toNumber(sale.paid) + paying;
       await db.sales.update(sale.id, {
         paid: newPaid,
-        status: newPaid >= toNumber(sale.total) ? 'payÃ©' : sale.status,
+        status: newPaid >= toNumber(sale.total) ? 'payé' : sale.status,
       });
       remaining -= paying;
     }

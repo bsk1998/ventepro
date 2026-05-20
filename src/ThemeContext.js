@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
 // ── Palettes de couleurs accent (indépendant du mode) ─────────────────────────
 export const PALETTES = {
@@ -129,8 +129,8 @@ export function ThemeProvider({ children }) {
   const [mode,       setMode]       = useState(() => localStorage.getItem('vp_mode')    || 'light');
   const [paletteKey, setPaletteKey] = useState(() => localStorage.getItem('vp_palette') || 'default');
 
-  const theme  = buildTheme(mode, paletteKey);
-  const metier = METIER_CONFIG[paletteKey] || METIER_CONFIG.default;
+  const theme  = useMemo(() => buildTheme(mode, paletteKey), [mode, paletteKey]);
+  const metier = useMemo(() => METIER_CONFIG[paletteKey] || METIER_CONFIG.default, [paletteKey]);
 
   useEffect(() => {
     document.body.style.background = theme.bg;
@@ -186,7 +186,7 @@ export function ThemeSwitcher() {
 
       {/* ── Mode clair/sombre INDÉPENDANT ── */}
       <div>
-        <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2,
+        <div style={{ fontSize:15, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2,
           color:'#7A85AA', marginBottom:10 }}>☀️🌙 Mode d'affichage — indépendant du thème</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
           {[
@@ -194,15 +194,15 @@ export function ThemeSwitcher() {
             { k:'dark',  icon:'🌙', label:'Sombre', desc:'Fond noir, texte clair'   },
           ].map(m => (
             <button key={m.k} onClick={() => switchMode(m.k)} style={{
-              padding:'14px', borderRadius:14, cursor:'pointer', textAlign:'center',
+              padding:'16px', borderRadius:14, cursor:'pointer', textAlign:'center',
               background: mode===m.k ? '#3B82F618' : 'transparent',
               border: `2px solid ${mode===m.k ? '#3B82F6' : '#2A3150'}`,
               transition:'all .15s',
             }}>
               <div style={{ fontSize:24, marginBottom:6 }}>{m.icon}</div>
-              <div style={{ fontSize:13, fontWeight:700, color: mode===m.k ? '#3B82F6' : '#EDF1FF' }}>{m.label}</div>
-              <div style={{ fontSize:10, color:'#7A85AA', marginTop:3 }}>{m.desc}</div>
-              {mode===m.k && <div style={{ fontSize:10, color:'#3B82F6', marginTop:4, fontWeight:800 }}>✓ Actif</div>}
+              <div style={{ fontSize:15, fontWeight:700, color: mode===m.k ? '#3B82F6' : '#EDF1FF' }}>{m.label}</div>
+              <div style={{ fontSize:12, color:'#7A85AA', marginTop:3 }}>{m.desc}</div>
+              {mode===m.k && <div style={{ fontSize:12, color:'#3B82F6', marginTop:4, fontWeight:800 }}>✓ Actif</div>}
             </button>
           ))}
         </div>
@@ -210,43 +210,43 @@ export function ThemeSwitcher() {
 
       {/* ── Couleur / Palette ── */}
       <div>
-        <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2,
+        <div style={{ fontSize:15, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2,
           color:'#7A85AA', marginBottom:10 }}>🎨 Couleur & Thème métier</div>
 
-        <div style={{ fontSize:10, color:'#7A85AA', marginBottom:6, fontWeight:600, letterSpacing:.6 }}>Général</div>
+        <div style={{ fontSize:12, color:'#7A85AA', marginBottom:6, fontWeight:600, letterSpacing:.6 }}>Général</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:14 }}>
           {GENERAL.map(k => {
             const p = PALETTES[k];
             return (
               <button key={k} onClick={() => switchPalette(k)} style={{
-                padding:'10px 8px', borderRadius:10, cursor:'pointer', textAlign:'center',
+                padding:'13px 10px', borderRadius:10, cursor:'pointer', textAlign:'center',
                 background: paletteKey===k ? p.accent+'22' : 'transparent',
                 border: `2px solid ${paletteKey===k ? p.accent : '#2A3150'}`,
                 transition:'all .15s',
               }}>
                 <div style={{ fontSize:18, marginBottom:3 }}>{p.icon}</div>
-                <div style={{ fontSize:10, fontWeight:700, color: paletteKey===k ? p.accent : '#EDF1FF' }}>{p.name}</div>
+                <div style={{ fontSize:12, fontWeight:700, color: paletteKey===k ? p.accent : '#EDF1FF' }}>{p.name}</div>
                 <div style={{ width:24, height:4, borderRadius:2, background:p.accent, margin:'5px auto 0' }}/>
               </button>
             );
           })}
         </div>
 
-        <div style={{ fontSize:10, color:'#7A85AA', marginBottom:6, fontWeight:600, letterSpacing:.6 }}>Métiers — icônes adaptées</div>
+        <div style={{ fontSize:12, color:'#7A85AA', marginBottom:6, fontWeight:600, letterSpacing:.6 }}>Métiers — icônes adaptées</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
           {METIERS.map(k => {
             const p = PALETTES[k];
             const m = METIER_CONFIG[k];
             return (
               <button key={k} onClick={() => switchPalette(k)} style={{
-                padding:'10px 8px', borderRadius:10, cursor:'pointer', textAlign:'center',
+                padding:'13px 10px', borderRadius:10, cursor:'pointer', textAlign:'center',
                 background: paletteKey===k ? p.accent+'22' : 'transparent',
                 border: `2px solid ${paletteKey===k ? p.accent : '#2A3150'}`,
                 transition:'all .15s',
               }}>
                 <div style={{ fontSize:18, marginBottom:3 }}>{p.icon}</div>
-                <div style={{ fontSize:10, fontWeight:700, color: paletteKey===k ? p.accent : '#EDF1FF' }}>{p.name}</div>
-                <div style={{ fontSize:9, color:'#7A85AA', marginTop:2 }}>
+                <div style={{ fontSize:12, fontWeight:700, color: paletteKey===k ? p.accent : '#EDF1FF' }}>{p.name}</div>
+                <div style={{ fontSize:11, color:'#7A85AA', marginTop:2 }}>
                   {Object.values(m.navIcons).slice(0,3).join(' ')}
                 </div>
                 <div style={{ width:24, height:4, borderRadius:2, background:p.accent, margin:'4px auto 0' }}/>

@@ -12,6 +12,7 @@ import Employees from './pages/Employees';
 import Treasury from './pages/Treasury';
 import { Reports, Quotes, Settings } from './pages/Other';
 import { db, seedIfEmpty } from './db';
+import { runAutoBackup } from './businessFeatures';
 import { DS, ANIMATIONS_CSS } from './designSystem';
 // ── FIX AUDIT : composants orphelins maintenant montés ────────────────────
 import { ToastContainer }  from './components/Feedback';
@@ -25,7 +26,7 @@ function GlobalStyles() {
 }
 
 // ─── BOUTON RETOUR ────────────────────────────────────────────────────────────
-function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, onLogout, onNavigate, currentPage }) {
+function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, onNavigate, currentPage }) {
   const [exp, setExp] = useState(false);
   return (
     <div style={{
@@ -106,15 +107,7 @@ function BackBtn({ onBack, shopName, pageName, alerts, onOpenAI, isAdmin, user, 
         display: 'flex', alignItems: 'center', gap: 5, boxShadow: DS.shadows.sm,
         flexShrink: 0,
       }}>🤖 IA</button>
-
-      {/* Déconnexion */}
-      <button onClick={onLogout} style={{
-        background: 'transparent', border: `1.5px solid ${DS.colors.dangerBd}`,
-        borderRadius: DS.radius.sm, padding: '5px 10px',
-        color: DS.colors.danger, fontSize: 11, cursor: 'pointer', fontWeight: 600,
-        flexShrink: 0,
-      }}>🚪</button>
-    </div>
+</div>
   );
 }
 
@@ -154,6 +147,7 @@ function AppInner() {
   }, []);
 
   useEffect(() => { if (user) loadLiveData(); }, [user]);
+  useEffect(() => { if (user) runAutoBackup().catch(() => {}); }, [user]);
 
   async function loadLiveData() {
     try {
@@ -174,7 +168,7 @@ function AppInner() {
     setShowAI(true);
   }
 
-  const isAdmin = ['admin', 'gerant', 'gérant', 'gÃ©rant'].includes(user?.role);
+  const isAdmin = ['admin', 'gerant', 'gérant'].includes(user?.role);
   const employeePages = ['dashboard', 'products', 'sales', 'clients'];
   const adminPages = ['dashboard', 'products', 'sales', 'clients', 'suppliers', 'employees', 'treasury', 'reports', 'quotes', 'settings'];
   const allowedPages = isAdmin ? adminPages : employeePages;
@@ -241,7 +235,6 @@ function AppInner() {
           onOpenAI={() => openAI(PAGE_AGENTS[currentPage] || null)}
           isAdmin={isAdmin}
           user={user}
-          onLogout={handleLogout}
           onNavigate={safeNavigate}
           currentPage={currentPage}
         />
@@ -262,7 +255,7 @@ function AppInner() {
         {currentPage === 'treasury'  && <Treasury/>}
         {currentPage === 'reports'   && <Reports/>}
         {currentPage === 'quotes'    && <Quotes/>}
-        {currentPage === 'settings'  && <Settings/>}
+        {currentPage === 'settings'  && <Settings onLogout={handleLogout}/>}
       </div>
 
       {/* FIX AUDIT #6 : QuickAIButton flottant contextuel par page */}
